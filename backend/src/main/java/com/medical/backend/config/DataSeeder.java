@@ -17,41 +17,45 @@ public class DataSeeder {
             com.medical.backend.repository.PrescriptionItemRepository itemRepository,
             PasswordEncoder passwordEncoder) {
         return args -> {
-            // Ensure MedTrack Admin exists
-            if (repository.findByEmail("admin@medtrack.com").isEmpty()) {
-                User admin = new User();
-                admin.setEmail("admin@medtrack.com");
-                admin.setPassword(passwordEncoder.encode("password"));
-                admin.setRole(Role.ADMIN);
-                admin.setFullName("System Admin");
-                admin.setVerified(true);
-                repository.save(admin);
-            }
+            // Ensure MedTrack Admin exists — always re-encode password so stale/plain-text
+            // passwords are fixed
+            User admin = repository.findByEmail("admin@medtrack.com").orElseGet(() -> {
+                User a = new User();
+                a.setEmail("admin@medtrack.com");
+                a.setRole(Role.ADMIN);
+                a.setFullName("System Admin");
+                a.setVerified(true);
+                return a;
+            });
+            admin.setPassword(passwordEncoder.encode("password"));
+            repository.save(admin);
 
-            // Ensure Doctor exists
+            // Ensure Doctor exists — always re-encode password
             User doctor = repository.findByEmail("doctor@example.com").orElseGet(() -> {
                 User d = new User();
                 d.setEmail("doctor@example.com");
-                d.setPassword(passwordEncoder.encode("password"));
                 d.setRole(Role.DOCTOR);
                 d.setFullName("Dr. Alex Spreadsheet");
                 d.setMedicalLicenseNumber("MD-12345");
                 d.setSpecialization("General Physician");
                 d.setVerified(true);
-                return repository.save(d);
+                return d;
             });
+            doctor.setPassword(passwordEncoder.encode("password"));
+            doctor = repository.save(doctor);
 
-            // Ensure Patient console.leo@gmail.com exists
+            // Ensure Patient console.leo@gmail.com exists — always re-encode password
             User leo = repository.findByEmail("console.leo@gmail.com").orElseGet(() -> {
                 User p = new User();
                 p.setEmail("console.leo@gmail.com");
-                p.setPassword(passwordEncoder.encode("password"));
                 p.setRole(Role.PATIENT);
                 p.setFullName("Console Leo");
                 p.setMedicalHistory("Regular health checkups.");
                 p.setVerified(true);
-                return repository.save(p);
+                return p;
             });
+            leo.setPassword(passwordEncoder.encode("password"));
+            leo = repository.save(leo);
 
             // Seed dummy prescriptions for console.leo@gmail.com if none exist
             if (prescriptionRepository.findByPatient_Id(leo.getId()).isEmpty()) {

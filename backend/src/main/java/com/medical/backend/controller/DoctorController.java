@@ -59,6 +59,20 @@ public class DoctorController {
         return ResponseEntity.ok(riskService.getPatientsByRisk(doctor.getId()));
     }
 
+    @PutMapping("/patients/{id}/adherence-threshold")
+    public ResponseEntity<?> updateAdherenceThreshold(
+            @PathVariable("id") Long patientId,
+            @RequestParam("threshold") Double threshold,
+            @RequestHeader("Authorization") String token) {
+
+        User patient = userRepository.findById(patientId)
+                .orElseThrow(() -> new RuntimeException("Patient not found"));
+
+        patient.setAdherenceThreshold(threshold);
+        userRepository.save(patient);
+        return ResponseEntity.ok(java.util.Map.of("message", "Threshold updated successfully"));
+    }
+
     @GetMapping("/renewals")
     public ResponseEntity<List<com.medical.backend.entity.RenewalRequest>> getRenewalRequests(
             @RequestHeader("Authorization") String token) {

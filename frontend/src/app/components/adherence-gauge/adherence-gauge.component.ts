@@ -2,10 +2,10 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
-    selector: 'app-adherence-gauge',
-    standalone: true,
-    imports: [CommonModule],
-    template: `
+  selector: 'app-adherence-gauge',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
     <div class="gauge-wrap">
       <svg [attr.width]="size" [attr.height]="size" [attr.viewBox]="'0 0 ' + size + ' ' + size">
         <!-- Background circle -->
@@ -29,7 +29,7 @@ import { CommonModule } from '@angular/common';
           [attr.stroke]="arcColor"
           [attr.stroke-dasharray]="circumference"
           [attr.stroke-dashoffset]="dashOffset"
-          transform="rotate(-90 {{center}} {{center}})"
+          [attr.transform]="'rotate(-90 ' + center + ' ' + center + ')'"
         />
         <!-- Center text -->
         <text [attr.x]="center" [attr.y]="center - 8" class="gauge-pct" text-anchor="middle" dominant-baseline="middle">
@@ -42,7 +42,7 @@ import { CommonModule } from '@angular/common';
       <div class="gauge-status" [style.color]="arcColor">{{ statusLabel }}</div>
     </div>
   `,
-    styles: [`
+  styles: [`
     .gauge-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
     .gauge-bg { stroke: rgba(255,255,255,0.06); }
     .gauge-progress { transition: stroke-dashoffset 0.9s ease, stroke 0.4s ease; }
@@ -52,31 +52,31 @@ import { CommonModule } from '@angular/common';
   `]
 })
 export class AdherenceGaugeComponent implements OnChanges {
-    @Input() percent: number = 0;
-    @Input() size: number = 140;
+  @Input() percent: number = 0;
+  @Input() size: number = 140;
 
-    center = 70;
-    radius = 56;
-    circumference = 2 * Math.PI * 56;
-    dashOffset = 0;
-    arcColor = '#22c55e';
-    statusLabel = 'Good';
+  center = 70;
+  radius = 56;
+  circumference = 2 * Math.PI * 56;
+  dashOffset = 0;
+  arcColor = '#22c55e';
+  statusLabel = 'Good';
 
-    ngOnChanges(changes: SimpleChanges): void {
-        if (changes['size'] && this.size !== 140) {
-            this.center = this.size / 2;
-            this.radius = this.size / 2 - 14;
-            this.circumference = 2 * Math.PI * this.radius;
-        }
-        const clampedPct = Math.max(0, Math.min(100, this.percent));
-        this.dashOffset = this.circumference * (1 - clampedPct / 100);
-
-        if (clampedPct >= 80) {
-            this.arcColor = '#22c55e'; this.statusLabel = 'Good';
-        } else if (clampedPct >= 50) {
-            this.arcColor = '#f59e0b'; this.statusLabel = 'Fair';
-        } else {
-            this.arcColor = '#ef4444'; this.statusLabel = 'Poor';
-        }
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['size'] && this.size !== 140) {
+      this.center = this.size / 2;
+      this.radius = this.size / 2 - 14;
+      this.circumference = 2 * Math.PI * this.radius;
     }
+    const clampedPct = Math.max(0, Math.min(100, this.percent));
+    this.dashOffset = this.circumference * (1 - clampedPct / 100);
+
+    if (clampedPct >= 85) {
+      this.arcColor = '#22c55e'; this.statusLabel = 'Good';
+    } else if (clampedPct >= 70) {
+      this.arcColor = '#f59e0b'; this.statusLabel = 'Fair';
+    } else {
+      this.arcColor = '#ef4444'; this.statusLabel = 'Poor';
+    }
+  }
 }

@@ -87,17 +87,45 @@
                                             <input type="text" formControlName="dosage" class="form-control font-mono"
                                                 placeholder="e.g. 500mg">
                                         </div>
+                                        <div class="col-md-6 mb-3 mb-md-0">
+                                            <label class="form-label small text-muted mb-1">Clinical Directive (Timing &
+                                                Food)</label>
+                                            <div class="input-group">
+                                                <select formControlName="foodInstruction"
+                                                    class="form-select font-mono small">
+                                                    <option value="BEFORE_FOOD">Before Food</option>
+                                                    <option value="AFTER_FOOD">After Food</option>
+                                                    <option value="WITH_FOOD">With Food</option>
+                                                    <option value="ANY">Any Time</option>
+                                                </select>
+                                                <input type="text" formControlName="mealSlots"
+                                                    class="form-control font-mono small"
+                                                    placeholder="BREAKFAST,LUNCH,DINNER">
+                                            </div>
+                                            <small class="text-muted" style="font-size: 0.65rem;">Slots: comma separated
+                                                (LUNCH, DINNER)</small>
+                                        </div>
+                                    </div>
+                                    <div class="row align-items-end mt-2">
                                         <div class="col-md-2 mb-3 mb-md-0">
                                             <label class="form-label small text-muted mb-1">Qty</label>
                                             <input type="number" formControlName="quantity"
                                                 class="form-control font-mono">
                                         </div>
-                                    </div>
-                                    <div class="row align-items-end mt-2">
                                         <div class="col-md-4 mb-3 mb-md-0">
-                                            <label class="form-label small text-muted mb-1">Timing</label>
-                                            <input type="text" formControlName="dosageTiming"
-                                                class="form-control font-mono" placeholder="e.g. Before food">
+                                            <label class="form-label small text-muted mb-1">Frequency</label>
+                                            <select formControlName="frequency" class="form-select font-mono small">
+                                                <option value="DAILY">Daily</option>
+                                                <option value="ALTERNATE_DAY">Alternate Days</option>
+                                                <option value="WEEKLY">Weekly</option>
+                                                <option value="CUSTOM">Custom Days (Mon,Wed...)</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3 mb-3 mb-md-0"
+                                            *ngIf="items.at(i).get('frequency')?.value === 'CUSTOM'">
+                                            <label class="form-label small text-muted mb-1">Days (MON,WED...)</label>
+                                            <input type="text" formControlName="daysOfWeek"
+                                                class="form-control font-mono small" placeholder="MON,WED,FRI">
                                         </div>
                                         <div class="col-md-4 mb-3 mb-md-0">
                                             <label class="form-label small text-muted mb-1">Start Date</label>

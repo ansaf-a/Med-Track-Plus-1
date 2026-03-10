@@ -34,6 +34,13 @@ public class MedicationSchedule {
     @Version
     private Long version = 0L;
 
+    /**
+     * Semantic audit version string (e.g. "1.0", "1.1"). Updated after doctor
+     * edits.
+     */
+    @Column(name = "audit_version")
+    private String auditVersion = "1.0";
+
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private LocalDateTime updatedAt;

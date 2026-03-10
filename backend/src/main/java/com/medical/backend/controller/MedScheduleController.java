@@ -1,6 +1,6 @@
 package com.medical.backend.controller;
 
-import com.medical.backend.config.JwtUtil;
+// Refreshed to trigger IDE sync
 import com.medical.backend.dto.MedScheduleDTO;
 import com.medical.backend.entity.MedicationSchedule;
 import com.medical.backend.entity.PatientMealPrefs;
@@ -20,7 +20,7 @@ public class MedScheduleController {
     @Autowired
     private MedScheduleService scheduleService;
     @Autowired
-    private JwtUtil jwtUtil;
+    private com.medical.backend.config.JwtUtil jwtUtil;
 
     private String emailFrom(String token) {
         return jwtUtil.extractUsername(token.substring(7));

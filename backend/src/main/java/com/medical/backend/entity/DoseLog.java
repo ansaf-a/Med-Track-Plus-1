@@ -23,6 +23,13 @@ public class DoseLog {
     @JoinColumn(name = "patient_id", nullable = false)
     private User patient;
 
+    /**
+     * Semantic audit version string (e.g. "1.0", "1.1") of the active
+     * MedicationSchedule at the time of log.
+     */
+    @Column(name = "audit_version")
+    private String auditVersion = "1.0";
+
     private String mealSlot; // "BREAKFAST" | "LUNCH" | "DINNER" | "CUSTOM"
     private String foodInstruction; // "BEFORE_FOOD" | "AFTER_FOOD" | "WITH_FOOD" | "ANY"
 

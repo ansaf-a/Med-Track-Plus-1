@@ -21,6 +21,9 @@ public class SystemAudit {
 
     private LocalDateTime timestamp;
 
+    /** Human-readable semantic version: v1.0, v1.1, v1.2 … */
+    private String versionLabel = "1.1";
+
     @PrePersist
     public void prePersist() {
         this.timestamp = LocalDateTime.now();

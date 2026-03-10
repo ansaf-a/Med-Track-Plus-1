@@ -87,14 +87,50 @@ public class MedScheduleService {
                 : "Schedule for Rx #" + prescription.getId());
         schedule.setStartDate(req.getStartDate() != null ? req.getStartDate() : LocalDate.now());
         schedule.setStatus(MedicationSchedule.ScheduleStatus.ACTIVE);
-        schedule = scheduleRepo.save(schedule);
+        schedule = scheduleRepo.saveAndFlush(schedule);
 
         // 3. Build schedule items from prescription items
         List<ScheduleItem> items = buildItems(schedule, req, prescription);
-        itemRepo.saveAll(items);
+        items = itemRepo.saveAllAndFlush(items);
 
-        // 4. Pre-generate Day 1 dose logs
-        generateDoseLogsForDate(items, mealPrefs, LocalDate.now());
+        // 4. Pre-generate ALL dose logs for the full medication duration
+        LocalDate scheduleStart = schedule.getStartDate() != null ? schedule.getStartDate() : LocalDate.now();
+        for (ScheduleItem item : items) {
+            int totalDays = item.getDurationDays() != null && item.getDurationDays() > 0
+                    ? item.getDurationDays()
+                    : 30; // default 30 days if duration not set
+
+            for (int dayOffset = 0; dayOffset < totalDays; dayOffset++) {
+                LocalDate targetDate = scheduleStart.plusDays(dayOffset);
+
+                // Check frequency to decide if this day should have doses
+                boolean shouldGenerate = switch (item.getFrequency()) {
+                    case DAILY -> true;
+                    case ALTERNATE_DAY -> dayOffset % 2 == 0;
+                    case WEEKLY -> dayOffset % 7 == 0;
+                    case CUSTOM -> {
+                        // For CUSTOM, check daysOfWeek (e.g. "MON,WED,FRI")
+                        if (item.getDaysOfWeek() == null || item.getDaysOfWeek().isEmpty()) {
+                            yield true; // fallback to daily
+                        }
+                        String dayName = targetDate.getDayOfWeek().name()
+                                .substring(0, 3).toUpperCase(); // MON, TUE, etc.
+                        yield item.getDaysOfWeek().toUpperCase().contains(dayName);
+                    }
+                };
+
+                if (shouldGenerate) {
+                    generateDoseLogsForDate(List.of(item), mealPrefs, targetDate);
+                }
+            }
+        }
+
+        // Also set endDate on the schedule from the maximum item duration
+        int maxDuration = items.stream()
+                .map(i -> i.getDurationDays() != null ? i.getDurationDays() : 30)
+                .max(Integer::compareTo).orElse(30);
+        schedule.setEndDate(scheduleStart.plusDays(maxDuration));
+        schedule = scheduleRepo.save(schedule);
 
         // 5. Audit v1.0 CREATED
         recordAudit(schedule, patient, ScheduleAudit.ChangeType.CREATED,
@@ -146,12 +182,12 @@ public class MedScheduleService {
 
         String newVersion = bumpVersion(oldVersion);
         recordAudit(schedule, modifier, changeType,
-                "Status changed to " + newStatus.name() + " by " + modifier.getName(), newVersion, schedule);
+                "Status changed to " + newStatus.name() + " by " + modifier.getFullName(), newVersion, schedule);
 
         // Notify patient if doctor changed it
         if (!modifier.getId().equals(schedule.getPatient().getId())) {
             notificationService.createNotification(schedule.getPatient(),
-                    "Dr. " + modifier.getName() + " changed your schedule status to " + newStatus.name(),
+                    "Dr. " + modifier.getFullName() + " changed your schedule status to " + newStatus.name(),
                     "INFO");
         }
         return schedule;
@@ -191,7 +227,12 @@ public class MedScheduleService {
         item.setDosage(pi.getDosage());
         item.setMealSlots(pi.getMealSlots());
         item.setFoodInstruction(pi.getFoodInstruction());
-        item.setFrequency(ScheduleItem.Frequency.DAILY);
+        if (pi.getFrequency() != null) {
+            item.setFrequency(ScheduleItem.Frequency.valueOf(pi.getFrequency()));
+        }
+        if (pi.getDaysOfWeek() != null) {
+            item.setDaysOfWeek(pi.getDaysOfWeek());
+        }
         if (pi.getEndDate() != null && pi.getStartDate() != null) {
             long days = java.time.temporal.ChronoUnit.DAYS.between(pi.getStartDate(), pi.getEndDate());
             item.setDurationDays((int) days);

@@ -1,14 +1,18 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { PrescriptionService } from '../../services/prescription.service';
 import { AdherenceService } from '../../services/adherence.service';
+import { DoctorService } from '../../services/doctor.service';
+import { MedScheduleService, MedicationSchedule } from '../../services/med-schedule.service';
 import { Prescription } from '../../models/prescription.model';
+import Chart from 'chart.js/auto';
 
 @Component({
   selector: 'app-patient-profile',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, FormsModule],
   template: `
     <div class="container py-5">
       <!-- Header -->
@@ -61,13 +65,32 @@ import { Prescription } from '../../models/prescription.model';
                     <h3 class="fw-bold mb-0">{{adherenceScore}}%</h3>
                 </div>
             </div>
-            <p class="small text-muted mt-2">Overall Patient Adherence</p>
+            <p class="small text-muted mt-2 mb-3">Overall Patient Adherence</p>
+
+            <hr class="op-10 my-3">
+            <h6 class="text-uppercase text-secondary small fw-bold mb-3">Alert Threshold</h6>
+            <div class="input-group input-group-sm mb-2">
+                <input type="number" class="form-control text-center" [(ngModel)]="threshold" min="0" max="100">
+                <span class="input-group-text">%</span>
+                <button class="btn btn-primary" [disabled]="savingThreshold" (click)="saveThreshold()">Save</button>
+            </div>
+            <p class="small text-muted mb-0" style="font-size: 0.7rem;">Alert when adherence falls below this %</p>
           </div>
         </div>
 
-        <!-- Prescription History -->
+        <!-- Trend & History -->
         <div class="col-md-8">
-          <div class="apollo-card p-4 h-100">
+          <div class="apollo-card p-4 mb-4">
+             <div class="d-flex align-items-center mb-4">
+                 <i class="bi bi-graph-up-arrow text-primary me-2 fs-5"></i>
+                 <h5 class="fw-bold mb-0">Adherence Trend (14 Days)</h5>
+             </div>
+             <div style="position: relative; height: 220px; width: 100%;">
+                  <canvas #trendChartCanvas></canvas>
+             </div>
+          </div>
+
+          <div class="apollo-card p-4">
             <h5 class="fw-bold mb-4">Prescription History</h5>
             
             <div *ngIf="loading" class="text-center py-5">
@@ -113,13 +136,49 @@ import { Prescription } from '../../models/prescription.model';
                     </ul>
                     
                     <div class="mt-3 pt-2 border-top">
-                         <a [routerLink]="['/prescriptions', p.id]" class="btn btn-sm btn-light w-100">View Details</a>
+                         <a *ngIf="false" class="btn btn-sm btn-light w-100">View Details</a>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
+          </div>
+
+          <!-- Patient Schedules -->
+          <div class="apollo-card p-4 mt-4">
+            <div class="d-flex align-items-center mb-4">
+              <i class="bi bi-alarm text-warning me-2 fs-5"></i>
+              <h5 class="fw-bold mb-0">Medication Schedules</h5>
+            </div>
+
+            <div *ngIf="patientSchedules.length === 0" class="text-center py-4 text-muted">
+              <i class="bi bi-calendar-x fs-1 d-block mb-2 opacity-25"></i>
+              This patient has no active medication schedules.
+            </div>
+
+            <div *ngFor="let s of patientSchedules" class="d-flex align-items-start gap-3 p-3 mb-2 rounded-3" 
+                 style="background:rgba(9,132,227,0.04); border:1px solid rgba(9,132,227,0.1);">
+              <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                   style="width:40px;height:40px;" 
+                   [style.background]="s.status === 'ACTIVE' ? 'rgba(0,184,148,0.12)' : 'rgba(108,117,125,0.12)'"
+                   [style.color]="s.status === 'ACTIVE' ? '#00b894' : '#6c757d'">
+                <i class="bi" [ngClass]="{'bi-play-circle-fill': s.status === 'ACTIVE', 'bi-pause-circle-fill': s.status === 'PAUSED', 'bi-check-circle-fill': s.status === 'COMPLETED'}"></i>
+              </div>
+              <div class="flex-grow-1">
+                <div class="fw-bold" style="font-size:0.9rem;">{{ s.scheduleName || 'Medication Schedule' }}</div>
+                <div class="small text-muted">
+                  <i class="bi bi-calendar3 me-1"></i>Started: {{ s.startDate | date:'mediumDate' }}
+                  <span *ngIf="s.endDate"> · Ends: {{ s.endDate | date:'mediumDate' }}</span>
+                </div>
+                <div class="small text-muted"><i class="bi bi-prescription2 me-1"></i>Rx #{{ s.prescription?.id }}</div>
+              </div>
+              <span class="badge rounded-pill" [ngClass]="{
+                'bg-success': s.status === 'ACTIVE',
+                'bg-warning text-dark': s.status === 'PAUSED',
+                'bg-secondary': s.status === 'COMPLETED' || s.status === 'CANCELLED'
+              }">{{ s.status }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -134,21 +193,30 @@ import { Prescription } from '../../models/prescription.model';
     }
   `]
 })
-export class PatientProfileComponent implements OnInit {
+export class PatientProfileComponent implements OnInit, AfterViewInit {
+  @ViewChild('trendChartCanvas') trendChartCanvas!: ElementRef;
+  trendChart: any;
+
   patientId: number | null = null;
   patientName: string | null = null;
   patientEmail: string | null = null;
   prescriptions: Prescription[] = [];
+  patientSchedules: MedicationSchedule[] = [];
   adherenceScore: number = 0;
   dashArray = 339.292;
   dashOffset = 339.292;
   loading = true;
 
+  threshold: number = 80;
+  savingThreshold: boolean = false;
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private prescriptionService: PrescriptionService,
-    private adherenceService: AdherenceService
+    private adherenceService: AdherenceService,
+    private doctorService: DoctorService,
+    private scheduleService: MedScheduleService
   ) { }
 
   ngOnInit(): void {
@@ -157,6 +225,7 @@ export class PatientProfileComponent implements OnInit {
       this.patientId = id;
       this.loadHistory(id);
       this.loadAdherence(id);
+      this.loadSchedules(id);
     }
   }
 
@@ -167,6 +236,77 @@ export class PatientProfileComponent implements OnInit {
         this.dashOffset = this.dashArray - (this.dashArray * this.adherenceScore / 100);
       },
       error: (err) => console.error('Error loading adherence', err)
+    });
+
+    this.adherenceService.getAdherenceTrend(id, 14).subscribe({
+      next: (trendData) => {
+        setTimeout(() => this.renderTrendChart(trendData), 100);
+      },
+      error: (err) => console.error('Error loading adherence trend', err)
+    });
+  }
+
+  ngAfterViewInit(): void {
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    Chart.defaults.color = '#636e72';
+  }
+
+  renderTrendChart(data: any[]): void {
+    if (!this.trendChartCanvas) return;
+
+    const labels = data.map(d => {
+      const dateObj = new Date(d.date);
+      return dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    });
+    const values = data.map(d => d.percent);
+
+    if (this.trendChart) {
+      this.trendChart.destroy();
+    }
+
+    this.trendChart = new Chart(this.trendChartCanvas.nativeElement, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Adherence %',
+          data: values,
+          borderColor: '#00b894',
+          backgroundColor: 'rgba(0, 184, 148, 0.1)',
+          borderWidth: 3,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#00b894',
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, max: 100, ticks: { stepSize: 20 } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  saveThreshold(): void {
+    if (!this.patientId) return;
+    this.savingThreshold = true;
+    this.doctorService.updateAdherenceThreshold(this.patientId, this.threshold).subscribe({
+      next: () => {
+        alert('Threshold updated successfully');
+        this.savingThreshold = false;
+      },
+      error: (err) => {
+        console.error(err);
+        alert('Failed to update threshold');
+        this.savingThreshold = false;
+      }
     });
   }
 
@@ -179,12 +319,24 @@ export class PatientProfileComponent implements OnInit {
           const p = data[0];
           this.patientEmail = p.patientEmail || (p.patient?.email);
           this.patientName = p.patient?.fullName || this.patientEmail;
+          // Assuming user entity might have adherenceThreshold appended to patient?
+          // If so:
+          if (p.patient && (p.patient as any).adherenceThreshold !== undefined) {
+            this.threshold = (p.patient as any).adherenceThreshold;
+          }
         }
       },
       error: (err) => {
         console.error('Error loading history', err);
         this.loading = false;
       }
+    });
+  }
+
+  loadSchedules(id: number): void {
+    this.scheduleService.getPatientSchedules(id).subscribe({
+      next: (data) => this.patientSchedules = data,
+      error: (err) => console.error('Error loading schedules', err)
     });
   }
 

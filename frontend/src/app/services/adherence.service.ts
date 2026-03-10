@@ -30,4 +30,12 @@ export class AdherenceService {
     getPatientAdherenceScore(patientId: number): Observable<{ score: number, patientId: number }> {
         return this.http.get<{ score: number, patientId: number }>(`${this.apiUrl}/patient/${patientId}/score`, { headers: this.getHeaders() });
     }
+
+    getAdherenceTrend(patientId: number, days: number = 14): Observable<any[]> {
+        return this.http.get<any[]>(`http://localhost:8081/api/analytics/schedules/patient/${patientId}/trend?days=${days}`, { headers: this.getHeaders() });
+    }
+
+    getMyAdherenceTrend(days: number = 14): Observable<any[]> {
+        return this.http.get<any[]>(`http://localhost:8081/api/analytics/schedules/my-trend?days=${days}`, { headers: this.getHeaders() });
+    }
 }

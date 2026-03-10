@@ -108,7 +108,11 @@ export class PrescriptionComponent implements OnInit {
                     medicineName: [item.medicineName, Validators.required],
                     dosage: [item.dosage, Validators.required],
                     quantity: [item.quantity, [Validators.required, Validators.min(1)]],
-                    dosageTiming: [item.dosageTiming, Validators.required],
+                    dosageTiming: [item.dosageTiming],
+                    mealSlots: [item.mealSlots || 'BREAKFAST,LUNCH,DINNER'],
+                    foodInstruction: [item.foodInstruction || 'AFTER_FOOD'],
+                    frequency: [item.frequency || 'DAILY'],
+                    daysOfWeek: [item.daysOfWeek || ''],
                     startDate: [item.startDate, Validators.required],
                     endDate: [item.endDate, Validators.required]
                 }));
@@ -133,7 +137,11 @@ export class PrescriptionComponent implements OnInit {
             medicineName: ['', Validators.required],
             dosage: ['', Validators.required],
             quantity: [1, [Validators.required, Validators.min(1)]],
-            dosageTiming: ['', Validators.required],
+            dosageTiming: [''],
+            mealSlots: ['BREAKFAST,LUNCH,DINNER'],
+            foodInstruction: ['AFTER_FOOD'],
+            frequency: ['DAILY'],
+            daysOfWeek: [''],
             startDate: ['', Validators.required],
             endDate: ['', Validators.required]
         });
@@ -254,13 +262,15 @@ export class PrescriptionComponent implements OnInit {
         if (this.currentPrescriptionId) {
             this.prescriptionService.validatePrescription(this.currentPrescriptionId!, this.selectedPharmacistId || undefined).subscribe({
                 next: (res) => {
-                    this.message = 'Prescription Validated/Signed!';
+                    this.message = '✅ Prescription Validated & Signed successfully!';
                     this.currentPrescriptionStatus = res.status!;
                 },
                 error: (err) => {
-                    this.message = 'Error validating: ' + err.message;
+                    this.message = 'Error validating: ' + (err.error?.message || err.error || err.message);
                 }
             });
+        } else {
+            this.message = 'No prescription selected to validate.';
         }
     }
 }

@@ -46,4 +46,8 @@ export class DoseLogService {
     getDoseHistory(): Observable<DoseLog[]> {
         return this.http.get<DoseLog[]>(`${this.base}/history`);
     }
+
+    getAdherenceBlocks(): Observable<any[]> {
+        return this.http.get<any[]>(`${this.base}/adherence-blocks`);
+    }
 }

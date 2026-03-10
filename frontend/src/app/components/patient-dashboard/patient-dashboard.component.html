@@ -46,6 +46,16 @@
                     </span>
                 </a>
             </li>
+            <li>
+                <a class="nav-link-item" [class.active]="activeSection==='schedules'"
+                    (click)="activeSection='schedules'; $event.preventDefault()" href="#">
+                    <i class="bi bi-alarm nav-icon"></i> Reminders & Schedules
+                    <span *ngIf="mySchedules.length > 0" class="badge bg-primary ms-auto rounded-pill"
+                        style="font-size:0.65rem;">
+                        {{ mySchedules.length }}
+                    </span>
+                </a>
+            </li>
             <li style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid rgba(0,0,0,0.06)">
                 <a routerLink="/prescriptions" class="nav-link-item">
                     <i class="bi bi-file-earmark-medical nav-icon"></i> Prescriptions
@@ -95,6 +105,49 @@
         </header>
 
         <div class="page-content">
+
+            <!-- Real-Time Dose Alerts -->
+            <div *ngIf="dueDoses.length > 0"
+                class="alert shadow-sm border-0 d-flex align-items-start justify-content-between mb-4 glass-card"
+                style="background: rgba(253, 203, 110, 0.15); border-left: 5px solid #fdcb6e !important;">
+                <div class="d-flex gap-3 w-100">
+                    <div class="bg-warning text-white rounded-circle d-flex align-items-center justify-content-center"
+                        style="width: 45px; height: 45px; font-size: 1.2rem; flex-shrink: 0;">
+                        <i class="bi bi-bell-fill pulse-animation"></i>
+                    </div>
+                    <div class="w-100">
+                        <h5 class="mb-2 text-dark" style="font-weight: 700;">Live Medication Due</h5>
+
+                        <div *ngFor="let dose of dueDoses"
+                            class="bg-white rounded p-3 mb-2 shadow-sm border border-warning"
+                            style="border-color: rgba(255, 193, 7, 0.4) !important;">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1 text-primary fw-bold"><i class="bi bi-capsule-pill me-1"></i> {{
+                                        dose.medicineName }} <span class="text-muted fw-normal">({{ dose.dosage
+                                            }})</span></h6>
+                                    <p class="mb-0 small text-secondary">
+                                        <i class="bi bi-clock me-1"></i> Scheduled: <strong>{{
+                                            formatDate(dose.scheduledTime) }}</strong> &bull;
+                                        <span class="text-danger fw-bold"><i class="bi bi-info-circle me-1"></i> {{
+                                            dose.foodInstruction }}</span> {{ dose.mealSlot }}
+                                    </p>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-success fw-bold px-3 shadow-sm"
+                                        (click)="takeDoseAlert(dose)">
+                                        <i class="bi bi-check-circle-fill me-1"></i> Take
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary fw-bold px-3 shadow-sm"
+                                        (click)="snoozeDoseAlert(dose)">
+                                        <i class="bi bi-alarm-fill me-1"></i> Snooze 15m
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- ══════════════════════════════════════════════════
                  SECTION: OVERVIEW
@@ -353,7 +406,18 @@
                                             </div>
                                         </div>
                                     </td>
-                                    <td style="color:#636e72; font-size:0.85rem;">{{ getNextDoseTime(p) }}</td>
+                                    <td style="color:#636e72; font-size:0.85rem;">
+                                        <div class="mb-1">{{ getNextDoseTime(p) }}</div>
+                                        <div class="d-flex gap-1 mt-1 align-items-center" title="Last 7 days adherence">
+                                            <div *ngFor="let block of getAdherenceBlocks(p)"
+                                                [title]="(block.date | date:'MMM d') + ': ' + (block.taken ? 'Taken' : 'Missed/Pending')"
+                                                [class.taken]="block.taken" [class.missed]="!block.taken"
+                                                style="width: 14px; height: 14px; border-radius: 4px; transition: all 0.2s;"
+                                                [style.background]="block.taken ? '#00b894' : '#dfe6e9'"
+                                                [style.box-shadow]="block.taken ? '0 0 5px rgba(0,184,148,0.4)' : 'none'">
+                                            </div>
+                                        </div>
+                                    </td>
                                     <td>
                                         <div class="d-flex align-items-center justify-content-center gap-2">
                                             <!-- Mini circular ring per med -->
@@ -372,6 +436,12 @@
                                     </td>
                                     <td class="pe-4">
                                         <div class="d-flex gap-1 justify-content-end">
+                                            <button *ngIf="p.status === 'DISPENSED' && !hasActiveSchedule(p.id)"
+                                                class="btn btn-sm btn-outline-primary"
+                                                style="border-radius:20px; font-weight:600;"
+                                                (click)="openScheduleModal(p)" title="Setup Live Timers">
+                                                <i class="bi bi-alarm"></i> Setup Timers
+                                            </button>
                                             <button class="btn-icon" title="Log dose" (click)="logAdherence(p)">
                                                 <i class="bi bi-check-circle-fill text-success"></i>
                                             </button>
@@ -422,12 +492,11 @@
                                                 <i class="bi bi-bag-check-fill"></i>
                                             </div>
                                             <span style="font-weight:600;color:#2d3436;font-size:0.88rem;">{{
-                                                p.items[0]?.medicineName }}</span>
+                                                p.items?.[0]?.medicineName || 'Medication' }}</span>
                                         </div>
                                     </td>
                                     <td style="font-size:0.85rem;color:#636e72;">{{ p.pharmacist?.fullName }}</td>
-                                    <td style="font-size:0.82rem;color:#636e72;">{{ p.dispensedAt | date:'medium' }}
-                                    </td>
+                                    <td style="font-size:0.82rem;color:#636e72;">{{ formatDate(p.dispensedAt) }}</td>
                                 </tr>
                                 <tr *ngIf="dispensedPrescriptions.length === 0">
                                     <td colspan="3" class="text-center py-4 text-muted">No dispensed prescriptions yet.
@@ -541,6 +610,17 @@
                     </div>
                 </div>
 
+                <!-- Adherence Trend Chart -->
+                <div class="glass-card p-4 mb-4">
+                    <div class="d-flex align-items-center mb-3">
+                        <i class="bi bi-graph-up-arrow text-primary me-2 fs-5"></i>
+                        <h6 class="m-0" style="font-weight:700; color:#2d3436;">14-Day Adherence Trend</h6>
+                    </div>
+                    <div style="position: relative; height: 250px; width: 100%;">
+                        <canvas #trendChartCanvas></canvas>
+                    </div>
+                </div>
+
                 <!-- Per-medication breakdown -->
                 <div class="glass-card p-4" *ngFor="let p of activePrescriptions" style="margin-bottom:1rem;">
                     <div class="d-flex align-items-center gap-3 mb-3">
@@ -612,6 +692,284 @@
                             You're all caught up!
                         </div>
                     </ng-template>
+                </div>
+            </ng-container>
+
+            <!-- ══════════════════════════════════════════════════
+                 SECTION: REMINDERS & SCHEDULES
+            ══════════════════════════════════════════════════ -->
+            <ng-container *ngIf="activeSection === 'schedules'">
+                <div class="d-flex align-items-center justify-content-between mb-4">
+                    <div>
+                        <h2 class="section-heading">Reminders & Schedules</h2>
+                        <p class="section-sub">Your active medication schedules and upcoming reminders</p>
+                    </div>
+                    <a routerLink="/schedules/create" class="btn-primary-glass">
+                        <i class="bi bi-plus-lg me-1"></i> New Schedule
+                    </a>
+                </div>
+
+                <!-- Today's Upcoming Doses -->
+                <div class="glass-card p-4 mb-4">
+                    <div class="d-flex align-items-center mb-3">
+                        <i class="bi bi-clock-fill text-warning me-2 fs-5"></i>
+                        <h6 class="m-0" style="font-weight:700; color:#2d3436;">Today's Doses</h6>
+                        <span class="badge bg-warning text-dark ms-auto rounded-pill">{{dueDoses.length}} due</span>
+                    </div>
+
+                    <div *ngIf="dueDoses.length > 0">
+                        <div *ngFor="let dose of dueDoses"
+                            class="d-flex align-items-center justify-content-between p-3 mb-2 rounded-3"
+                            style="background:rgba(253,203,110,0.08); border:1px solid rgba(253,203,110,0.25);">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="rounded-circle d-flex align-items-center justify-content-center"
+                                    style="width:40px;height:40px;background:rgba(253,203,110,0.2);color:#e17055;">
+                                    <i class="bi bi-capsule-pill"></i>
+                                </div>
+                                <div>
+                                    <div style="font-weight:700;font-size:0.9rem;color:#2d3436;">{{dose.medicineName}}
+                                    </div>
+                                    <div style="font-size:0.78rem;color:#636e72;">{{dose.dosage}} · Scheduled:
+                                        {{formatDate(dose.scheduledTime)}}</div>
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm btn-success rounded-pill px-3 fw-bold"
+                                    (click)="takeDoseAlert(dose)">
+                                    <i class="bi bi-check2 me-1"></i>Take
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary rounded-pill px-3"
+                                    (click)="snoozeDoseAlert(dose)">
+                                    <i class="bi bi-alarm me-1"></i>Snooze
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div *ngIf="dueDoses.length === 0" class="text-center py-4 text-muted">
+                        <i class="bi bi-check-circle display-5 d-block mb-2 opacity-25" style="color:#00b894;"></i>
+                        <p class="mb-0">All caught up! No doses due right now.</p>
+                    </div>
+                </div>
+
+                <!-- ═══ TEMPORAL ADHERENCE BLOCKS ═══ -->
+                <div class="glass-card p-4 mb-4">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-grid-3x3-gap-fill me-2 fs-5" style="color:#6c5ce7;"></i>
+                            <h6 class="m-0" style="font-weight:700; color:#2d3436;">Adherence Blocks</h6>
+                        </div>
+                        <span class="badge rounded-pill"
+                            style="background:rgba(108,92,231,0.1);color:#6c5ce7;font-size:0.75rem;">
+                            {{adherenceBlocks.length}} days tracked
+                        </span>
+                    </div>
+                    <p class="small text-muted mb-3" style="line-height:1.4;">
+                        Each block = 1 day. Each dose = <strong>{{adherenceBlocks.length > 0 &&
+                            adherenceBlocks[0]?.weightPerDose ? adherenceBlocks[0].weightPerDose : 25}}%</strong> of
+                        daily adherence.
+                        <span style="color:#00b894;">■</span> Taken &nbsp;
+                        <span style="color:#0984e3;">■</span> Pending &nbsp;
+                        <span style="color:#d63031;">■</span> Missed
+                    </p>
+
+                    <div *ngIf="adherenceBlocks.length > 0" class="d-flex flex-wrap gap-3">
+                        <div *ngFor="let block of adherenceBlocks; let i = index" class="adherence-block text-center"
+                            [class.adherence-block-today]="isToday(block.date)" (click)="selectAdherenceBlock(block)"
+                            [style.cursor]="'pointer'" style="width:110px; padding:12px 8px; border-radius:20px; border:1px solid rgba(0,0,0,0.06);
+                                   background:rgba(255,255,255,0.85); backdrop-filter:blur(12px);
+                                   box-shadow:0 4px 16px rgba(0,0,0,0.04); transition:all 0.2s ease;">
+
+                            <!-- Day Label -->
+                            <div
+                                style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:#636e72; margin-bottom:6px;">
+                                {{block.dayLabel}}
+                            </div>
+
+                            <!-- Circular Gauge -->
+                            <div class="position-relative d-inline-block mb-1" style="width:60px; height:60px;">
+                                <svg width="60" height="60" viewBox="0 0 60 60">
+                                    <circle cx="30" cy="30" r="24" fill="none" stroke="#e2e8f0" stroke-width="5" />
+                                    <circle cx="30" cy="30" r="24" fill="none"
+                                        [attr.stroke]="block.dailyAdherence >= 80 ? '#00b894' : block.dailyAdherence >= 50 ? '#fdcb6e' : '#d63031'"
+                                        stroke-width="5" [attr.stroke-dasharray]="150.796"
+                                        [attr.stroke-dashoffset]="150.796 - (150.796 * block.dailyAdherence / 100)"
+                                        stroke-linecap="round" transform="rotate(-90 30 30)"
+                                        style="transition: stroke-dashoffset 0.6s ease-in-out;" />
+                                </svg>
+                                <div class="position-absolute top-50 start-50 translate-middle"
+                                    style="font-size:0.72rem; font-weight:800; color:#2d3436;">
+                                    {{block.dailyAdherence}}%
+                                </div>
+                            </div>
+
+                            <!-- Date -->
+                            <div style="font-size:0.78rem; font-weight:700; color:#2d3436;">
+                                {{formatBlockDate(block.date)}}
+                            </div>
+
+                            <!-- Dose Pills -->
+                            <div class="d-flex justify-content-center gap-1 mt-1 flex-wrap">
+                                <span *ngFor="let dose of block.doses" class="d-inline-block rounded-circle"
+                                    style="width:8px; height:8px;"
+                                    [style.background]="dose.status === 'TAKEN' ? '#00b894' : dose.status === 'MISSED' ? '#d63031' : '#0984e3'"
+                                    [title]="dose.medicineName + ' (' + dose.mealSlot + ') — ' + dose.status">
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div *ngIf="adherenceBlocks.length === 0" class="text-center py-4 text-muted">
+                        <i class="bi bi-grid-3x3 display-5 d-block mb-2 opacity-25"></i>
+                        <p class="mb-0">No adherence blocks yet. Create a schedule to start tracking.</p>
+                    </div>
+                </div>
+
+                <!-- ═══ DOSE DETAIL PANEL (shown when a block is clicked) ═══ -->
+                <div *ngIf="selectedBlock" class="glass-card p-4 mb-4" style="border-left:4px solid #6c5ce7;">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div>
+                            <h6 class="fw-bold mb-0" style="color:#2d3436;">
+                                <i class="bi bi-calendar-day me-2" style="color:#6c5ce7;"></i>
+                                {{formatBlockDateFull(selectedBlock.date)}}
+                            </h6>
+                            <p class="small text-muted mb-0 mt-1">
+                                {{selectedBlock.takenCount}}/{{selectedBlock.totalDoses}} doses taken ·
+                                Each dose = {{selectedBlock.weightPerDose}}% daily adherence
+                            </p>
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary rounded-pill" (click)="selectedBlock = null">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+
+                    <div *ngFor="let dose of selectedBlock.doses"
+                        class="d-flex align-items-center gap-3 p-3 mb-2 rounded-3"
+                        [style.background]="dose.status === 'TAKEN' ? 'rgba(0,184,148,0.06)' : dose.status === 'MISSED' ? 'rgba(214,48,49,0.06)' : 'rgba(9,132,227,0.06)'"
+                        [style.border]="'1px solid ' + (dose.status === 'TAKEN' ? 'rgba(0,184,148,0.2)' : dose.status === 'MISSED' ? 'rgba(214,48,49,0.2)' : 'rgba(9,132,227,0.2)')">
+                        <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                            style="width:36px;height:36px;"
+                            [style.background]="dose.status === 'TAKEN' ? 'rgba(0,184,148,0.15)' : dose.status === 'MISSED' ? 'rgba(214,48,49,0.15)' : 'rgba(9,132,227,0.15)'"
+                            [style.color]="dose.status === 'TAKEN' ? '#00b894' : dose.status === 'MISSED' ? '#d63031' : '#0984e3'">
+                            <i class="bi" [ngClass]="{
+                                'bi-check-circle-fill': dose.status === 'TAKEN',
+                                'bi-x-circle-fill': dose.status === 'MISSED',
+                                'bi-clock': dose.status === 'PENDING' || dose.status === 'SNOOZED'
+                            }"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div style="font-weight:700; font-size:0.88rem; color:#2d3436;">{{dose.medicineName}}</div>
+                            <div class="small text-muted">{{dose.mealSlot}} · {{dose.dosage}} · +{{dose.weight}}%
+                                adherence</div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge rounded-pill" [ngClass]="{
+                                    'bg-success': dose.status === 'TAKEN',
+                                    'bg-danger': dose.status === 'MISSED',
+                                    'bg-primary': dose.status === 'PENDING',
+                                    'bg-warning text-dark': dose.status === 'SNOOZED'
+                                }">{{dose.status}}</span>
+                            <button *ngIf="dose.status === 'PENDING' || dose.status === 'SNOOZED'"
+                                class="btn btn-sm btn-success rounded-pill px-3 fw-bold"
+                                (click)="markBlockDose(dose, 'TAKEN')">
+                                <i class="bi bi-check2 me-1"></i>Take
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Schedules -->
+                <div class="glass-card p-4 mb-4">
+                    <div class="d-flex align-items-center mb-3">
+                        <i class="bi bi-calendar2-week text-primary me-2 fs-5"></i>
+                        <h6 class="m-0" style="font-weight:700; color:#2d3436;">Active Schedules</h6>
+                    </div>
+
+                    <div *ngIf="mySchedules.length > 0" class="row g-3">
+                        <div class="col-md-6" *ngFor="let s of mySchedules">
+                            <div class="p-3 rounded-3 h-100"
+                                style="background:rgba(9,132,227,0.04); border:1px solid rgba(9,132,227,0.12);">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="fw-bold mb-0 text-dark" style="font-size:0.9rem;">{{ s.scheduleName ||
+                                        'Medication Schedule' }}</h6>
+                                    <span class="badge rounded-pill" [ngClass]="{
+                                        'bg-success': s.status === 'ACTIVE',
+                                        'bg-warning text-dark': s.status === 'PAUSED',
+                                        'bg-secondary': s.status === 'COMPLETED' || s.status === 'CANCELLED'
+                                    }">{{ s.status }}</span>
+                                </div>
+                                <div class="small text-muted mb-2">
+                                    <i class="bi bi-calendar3 me-1"></i>Started: {{ s.startDate | date:'mediumDate' }}
+                                    <span *ngIf="s.endDate"> · Ends: {{ s.endDate | date:'mediumDate' }}</span>
+                                </div>
+                                <div class="small text-muted mb-3">
+                                    <i class="bi bi-prescription2 me-1"></i>Prescription #{{ s.prescription?.id }}
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <a [routerLink]="['/doses/today']"
+                                        class="btn btn-sm btn-outline-primary rounded-pill px-3">
+                                        <i class="bi bi-list-check me-1"></i>Doses
+                                    </a>
+                                    <a [routerLink]="['/schedules', s.id, 'audit']"
+                                        class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+                                        <i class="bi bi-clock-history me-1"></i>History
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div *ngIf="mySchedules.length === 0" class="text-center py-5 text-muted">
+                        <i class="bi bi-calendar-x display-4 d-block mb-2 opacity-25"></i>
+                        <p class="mb-1">No medication schedules yet.</p>
+                        <a routerLink="/schedules/create" style="color:#0984e3; font-weight:600;">Create your first
+                            schedule →</a>
+                    </div>
+                </div>
+
+                <!-- Quick Links -->
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <a routerLink="/schedules"
+                            class="glass-card p-3 d-flex align-items-center gap-3 text-decoration-none"
+                            style="cursor:pointer;">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center"
+                                style="width:42px;height:42px;background:rgba(9,132,227,0.1);color:#0984e3;flex-shrink:0;">
+                                <i class="bi bi-list-ul"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight:700;font-size:0.85rem;color:#2d3436;">All Schedules</div>
+                                <div style="font-size:0.75rem;color:#636e72;">View & manage all schedules</div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a routerLink="/doses/today"
+                            class="glass-card p-3 d-flex align-items-center gap-3 text-decoration-none"
+                            style="cursor:pointer;">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center"
+                                style="width:42px;height:42px;background:rgba(0,184,148,0.1);color:#00b894;flex-shrink:0;">
+                                <i class="bi bi-capsule"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight:700;font-size:0.85rem;color:#2d3436;">Dose Tracker</div>
+                                <div style="font-size:0.75rem;color:#636e72;">Track today's medication doses</div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a routerLink="/notifications"
+                            class="glass-card p-3 d-flex align-items-center gap-3 text-decoration-none"
+                            style="cursor:pointer;">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center"
+                                style="width:42px;height:42px;background:rgba(253,203,110,0.15);color:#e17055;flex-shrink:0;">
+                                <i class="bi bi-bell"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight:700;font-size:0.85rem;color:#2d3436;">All Reminders</div>
+                                <div style="font-size:0.75rem;color:#636e72;">View notification history</div>
+                            </div>
+                        </a>
+                    </div>
                 </div>
             </ng-container>
 
@@ -783,6 +1141,55 @@
                 <ng-template #noHistory>
                     <p class="text-center text-muted py-4">No history records found.</p>
                 </ng-template>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══ Schedule Timers Modal ═════════════════════════════════════════════ -->
+<div class="modal show d-block" tabindex="-1" *ngIf="showScheduleModal"
+    style="background:rgba(0,0,0,0.45);backdrop-filter:blur(4px);">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow-lg"
+            style="background:rgba(255,255,255,0.92);backdrop-filter:blur(20px);">
+            <div class="modal-header border-0 px-4 pt-4 pb-0">
+                <h5 class="fw-bold m-0" style="color:#2d3436;">
+                    <i class="bi bi-alarm text-primary me-2"></i>Setup Live Timers
+                </h5>
+                <button type="button" class="btn-close ms-auto" (click)="closeScheduleModal()"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-muted mb-4 text-center">Customize your daily meal times. We will automatically schedule
+                    your doses around these times based on your doctor's instructions.</p>
+
+                <form (ngSubmit)="submitSchedule()" #scheduleForm="ngForm">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Breakfast Time</label>
+                        <input type="time" class="form-control glass-input" [(ngModel)]="schedulePrefs.breakfastTime"
+                            name="breakfast" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Lunch Time</label>
+                        <input type="time" class="form-control glass-input" [(ngModel)]="schedulePrefs.lunchTime"
+                            name="lunch" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Dinner Time</label>
+                        <input type="time" class="form-control glass-input" [(ngModel)]="schedulePrefs.dinnerTime"
+                            name="dinner" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Before-Meal Offset (Minutes)</label>
+                        <input type="number" class="form-control glass-input"
+                            [(ngModel)]="schedulePrefs.preMealOffsetMinutes" name="offset" min="0" max="60" required>
+                        <div class="form-text">How many minutes before a meal should "Before Food" doses trigger?</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100 py-2 rounded-pill fw-bold"
+                        style="box-shadow: 0 4px 12px rgba(9,132,227,0.3);" [disabled]="scheduleForm.invalid">
+                        <i class="bi bi-play-circle-fill me-2"></i> Activate Schedule
+                    </button>
+                </form>
             </div>
         </div>
     </div>

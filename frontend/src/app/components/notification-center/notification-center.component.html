@@ -23,12 +23,13 @@
                     <div class="icon-box me-3 flex-shrink-0" [ngClass]="{
                             'bg-primary-subtle text-primary': notif.type === 'INFO',
                             'bg-warning-subtle text-warning': notif.type === 'WARNING',
-                            'bg-danger-subtle text-danger': notif.type === 'CRITICAL' || notif.type === 'REMINDER'
+                            'bg-danger-subtle text-danger': notif.type === 'CRITICAL' || notif.type === 'REMINDER' || notif.type === 'ALERT'
                          }">
                         <i class="bi" [ngClass]="{
                                 'bi-info-circle-fill': notif.type === 'INFO',
                                 'bi-exclamation-triangle-fill': notif.type === 'WARNING',
-                                'bi-clock-history': notif.type === 'REMINDER' || notif.type === 'CRITICAL'
+                                'bi-clock-history': notif.type === 'REMINDER' || notif.type === 'CRITICAL',
+                                'bi-exclamation-octagon-fill': notif.type === 'ALERT'
                            }"></i>
                     </div>
 

@@ -151,6 +151,10 @@ export const routes: Routes = [
         canActivate: [authGuard]
     },
     {
+        path: 'simulator',
+        loadComponent: () => import('./components/adherence-simulator/adherence-simulator.component').then(m => m.AdherenceSimulatorComponent)
+    },
+    {
         path: '',
         redirectTo: 'login',
         pathMatch: 'full'

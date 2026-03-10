@@ -11,6 +11,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class ScheduleReminderJob {
@@ -27,6 +29,8 @@ public class ScheduleReminderJob {
     private NotificationService notificationService;
     @Autowired
     private MedScheduleService medScheduleService;
+    @Autowired
+    private SystemAuditRepository auditRepo;
 
     /**
      * Runs every 15 minutes.
@@ -125,11 +129,21 @@ public class ScheduleReminderJob {
                 if (now.isAfter(deadline)) {
                     log.setStatus(DoseLog.DoseStatus.MISSED);
                     doseLogRepo.save(log);
+
+                    // Audit Log v1.1
+                    SystemAudit audit = new SystemAudit();
+                    audit.setAction("ADHERENCE_MISSED_AUTO");
+                    audit.setDetails(String.format(
+                            "Dose %s auto-marked as MISSED (1hr window lapsed). Patient: %s, Medicine: %s",
+                            log.getId(), log.getPatient().getEmail(), log.getScheduleItem().getMedicineName()));
+                    audit.setVersionLabel("1.1");
+                    auditRepo.save(audit);
+
                     String label = buildDisplayLabel(log.getMealSlot(), log.getFoodInstruction());
                     notificationService.createNotification(log.getPatient(),
                             "⚠️ Missed dose: " + log.getScheduleItem().getMedicineName()
                                     + " (" + label + ") — taken no action within 60 minutes.",
-                            "WARNING");
+                            "CRITICAL");
                 }
             }
         }
@@ -147,10 +161,78 @@ public class ScheduleReminderJob {
         for (DoseLog log : stale) {
             log.setStatus(DoseLog.DoseStatus.MISSED);
             doseLogRepo.save(log);
+
+            // Audit Log v1.1
+            SystemAudit audit = new SystemAudit();
+            audit.setAction("ADHERENCE_MISSED_SWEEP");
+            audit.setDetails(String.format("Dose %s marked as MISSED by midnight sweep. Patient: %s, Medicine: %s",
+                    log.getId(), log.getPatient().getEmail(), log.getScheduleItem().getMedicineName()));
+            audit.setVersionLabel("1.1");
+            auditRepo.save(audit);
+
             String label = buildDisplayLabel(log.getMealSlot(), log.getFoodInstruction());
             notificationService.createNotification(log.getPatient(),
                     "You missed your " + label + " dose of " + log.getScheduleItem().getMedicineName(),
                     "WARNING");
+        }
+    }
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PrescriptionRepository prescriptionRepository;
+
+    /**
+     * Runs daily at 01:00 AM.
+     * Checks if a patient's adherence falls below their configured threshold
+     * and sends an ALERT notification to the prescribing doctor.
+     */
+    @Scheduled(cron = "0 0 1 * * *")
+    @Transactional
+    public void checkAdherenceThresholds() {
+        List<User> patients = userRepository.findByRole(Role.PATIENT);
+        LocalDateTime start = LocalDate.now().minusDays(30).atStartOfDay();
+        LocalDateTime end = LocalDateTime.now();
+
+        for (User patient : patients) {
+            if (patient.getAdherenceThreshold() == null)
+                continue;
+
+            List<DoseLog> logs = doseLogRepo.findByPatientAndDateRange(patient, start, end);
+            if (logs.isEmpty())
+                continue;
+
+            // Only count doses whose scheduled time has already passed (exclude future
+            // PENDING)
+            List<DoseLog> pastLogs = logs.stream()
+                    .filter(l -> l.getScheduledTime().isBefore(LocalDateTime.now().plusMinutes(1)))
+                    .collect(Collectors.toList());
+            if (pastLogs.isEmpty())
+                continue;
+
+            long total = pastLogs.size();
+            long taken = pastLogs.stream().filter(l -> l.getStatus() == DoseLog.DoseStatus.TAKEN).count();
+            double adherence = Math.round((taken * 100.0 / total) * 10.0) / 10.0;
+
+            if (adherence < patient.getAdherenceThreshold()) {
+                // Find doctors who prescribed for this patient
+                List<Prescription> prescriptions = prescriptionRepository.findByPatientAndStatus(patient,
+                        Prescription.PrescriptionStatus.ISSUED);
+                Set<User> notifiedDoctors = new java.util.HashSet<>();
+
+                for (Prescription p : prescriptions) {
+                    if (p.getDoctor() != null && notifiedDoctors.add(p.getDoctor())) {
+                        String message = String.format(
+                                "Alert: Patient %s's adherence has dropped to %.1f%% (Below threshold of %.1f%%).",
+                                patient.getFullName() != null ? patient.getFullName() : patient.getEmail(),
+                                adherence,
+                                patient.getAdherenceThreshold());
+
+                        notificationService.createNotification(p.getDoctor(), message, "ALERT");
+                    }
+                }
+            }
         }
     }
 

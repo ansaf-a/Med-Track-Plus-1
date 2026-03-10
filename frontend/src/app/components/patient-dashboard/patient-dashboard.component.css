@@ -676,6 +676,19 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
+/* ─── Adherence Blocks ───────────────────────────────────────────── */
+.adherence-block:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 8px 24px rgba(108, 92, 231, 0.15) !important;
+    border-color: rgba(108, 92, 231, 0.25) !important;
+}
+
+.adherence-block-today {
+    border-color: rgba(9, 132, 227, 0.4) !important;
+    box-shadow: 0 4px 20px rgba(9, 132, 227, 0.15) !important;
+    background: rgba(9, 132, 227, 0.04) !important;
+}
+
 /* ─── Responsive ─────────────────────────────────────────────────── */
 @media (max-width: 768px) {
     .glass-sidebar {

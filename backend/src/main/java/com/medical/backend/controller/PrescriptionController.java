@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/prescriptions")
@@ -30,19 +31,31 @@ public class PrescriptionController {
     @PostMapping
     public ResponseEntity<?> createPrescription(
             @RequestBody Prescription prescription,
-            @RequestHeader("Authorization") String token) throws IOException {
+            @RequestHeader("Authorization") String token) {
 
-        String jwt = token.substring(7);
-        String email = jwtUtil.extractUsername(jwt);
-        User doctor = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("Doctor not found"));
+        try {
+            String jwt = token.substring(7);
+            String email = jwtUtil.extractUsername(jwt);
+            User doctor = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("Doctor not found"));
 
-        if (!doctor.isVerified()) {
-            return ResponseEntity.status(403).body("Unauthorized: Doctor account is pending verification.");
+            if (!doctor.isVerified()) {
+                System.out.println("[AUTH] Unverified doctor attempted to create prescription: " + email);
+                return ResponseEntity.status(403).body("Unauthorized: Doctor account is pending verification.");
+            }
+
+            prescription.setDoctor(doctor);
+            System.out.println("[DEBUG] Creating prescription for patient: " + prescription.getPatientEmail());
+
+            return ResponseEntity.ok(prescriptionService.createPrescription(prescription));
+        } catch (Exception e) {
+            System.err.println("[ERROR] Failed to create prescription: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of(
+                    "message",
+                    "Failed to create prescription: "
+                            + (e.getMessage() != null ? e.getMessage() : e.getClass().getName()),
+                    "error", e.getClass().getSimpleName()));
         }
-
-        prescription.setDoctor(doctor);
-
-        return ResponseEntity.ok(prescriptionService.createPrescription(prescription));
     }
 
     @PostMapping("/upload")
@@ -75,11 +88,17 @@ public class PrescriptionController {
 
     @PostMapping("/{id}/validate")
     public ResponseEntity<?> validatePrescription(@PathVariable("id") Long id,
-            @RequestParam(required = false) Long pharmacistId) {
+            @RequestParam(value = "pharmacistId", required = false) Long pharmacistId) {
         try {
+            System.out.println("[DEBUG] Validating prescription #" + id + " for pharmacist: " + pharmacistId);
             return ResponseEntity.ok(prescriptionService.validatePrescription(id, pharmacistId));
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(400).body(e.getMessage());
+        } catch (Exception e) {
+            System.err.println("[ERROR] Failed to validate prescription #" + id + ": " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(400).body(Map.of(
+                    "message",
+                    (e.getMessage() != null ? e.getMessage() : "Validation failed due to: " + e.getClass().getName()),
+                    "error", e.getClass().getSimpleName()));
         }
     }
 

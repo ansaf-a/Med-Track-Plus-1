@@ -40,4 +40,8 @@ export class DoctorService {
     getAllDoctors(): Observable<DoctorUser[]> {
         return this.http.get<DoctorUser[]>(`${this.apiUrl}/all`, { headers: this.getHeaders() });
     }
+
+    updateAdherenceThreshold(patientId: number, threshold: number): Observable<any> {
+        return this.http.put<any>(`${this.apiUrl}/patients/${patientId}/adherence-threshold?threshold=${threshold}`, {}, { headers: this.getHeaders() });
+    }
 }

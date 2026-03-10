@@ -1,4 +1,5 @@
 package com.medical.backend.config;
+// Refreshed to trigger IDE sync
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;

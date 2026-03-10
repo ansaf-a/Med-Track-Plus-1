@@ -100,11 +100,72 @@ public class ScheduleAnalyticsService {
         if (logs.isEmpty())
             return 0.0;
 
-        long total = logs.size();
+        long total = logs.stream()
+                .filter(l -> l.getScheduledTime().isBefore(LocalDateTime.now().plusMinutes(1)))
+                .count();
         long taken = logs.stream()
+                .filter(l -> l.getScheduledTime().isBefore(LocalDateTime.now().plusMinutes(1)))
                 .filter(l -> l.getStatus() == com.medical.backend.entity.DoseLog.DoseStatus.TAKEN)
                 .count();
+        if (total == 0)
+            return 0.0;
         double pct = Math.round((taken * 100.0 / total) * 10.0) / 10.0;
         return pct;
+    }
+
+    /**
+     * Returns a list of daily adherence points for a specific patient.
+     * Used for rendering the Adherence Trend Line Chart.
+     * Returns Map of "date" (String YYYY-MM-DD) -> "percent" (Double)
+     */
+    public List<Map<String, Object>> getAdherenceTrend(Long patientId, int days) {
+        User patient = scheduleRepo.findAll().stream()
+                .map(MedicationSchedule::getPatient)
+                .filter(u -> u.getId().equals(patientId))
+                .findFirst().orElse(null);
+
+        if (patient == null) {
+            return new ArrayList<>();
+        }
+
+        LocalDateTime end = LocalDateTime.now();
+        LocalDateTime start = end.minusDays(days).withHour(0).withMinute(0).withSecond(0).withNano(0);
+
+        List<DoseLog> allLogs = doseLogRepo.findByPatientAndDateRange(patient, start, end);
+
+        // Group logs by Date string (YYYY-MM-DD)
+        Map<String, List<DoseLog>> groupedLogs = allLogs.stream()
+                .collect(Collectors.groupingBy(log -> log.getScheduledTime().toLocalDate().toString()));
+
+        List<Map<String, Object>> trend = new ArrayList<>();
+
+        // Loop through each day from start to end (to include days with 0 scheduled
+        // doses)
+        for (int i = days; i >= 0; i--) {
+            LocalDate date = LocalDate.now().minusDays(i);
+            String dateString = date.toString();
+            List<DoseLog> dailyLogs = groupedLogs.getOrDefault(dateString, new ArrayList<>());
+
+            long totalScheduledForDay = dailyLogs.size();
+            long takenForDay = dailyLogs.stream()
+                    .filter(l -> l.getStatus() == com.medical.backend.entity.DoseLog.DoseStatus.TAKEN)
+                    .count();
+
+            double adherence = 0.0;
+            if (totalScheduledForDay > 0) {
+                adherence = Math.round((takenForDay * 100.0 / totalScheduledForDay) * 10.0) / 10.0;
+            } else if (!trend.isEmpty()) {
+                // carry forward previous day's adherence if no meds scheduled today
+                adherence = (Double) trend.get(trend.size() - 1).get("percent");
+            } else {
+                adherence = 100.0; // Assume 100% adherence if nothing scheduled yet
+            }
+
+            trend.add(Map.of(
+                    "date", dateString,
+                    "percent", adherence));
+        }
+
+        return trend;
     }
 }

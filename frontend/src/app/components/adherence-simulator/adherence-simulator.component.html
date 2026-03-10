@@ -1,0 +1,144 @@
+<div class="simulator-container p-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-activity text-primary"></i> Three-Meal Adherence Simulator</h2>
+        <span class="badge bg-primary fs-6">{{ scheduleVersion }} Active</span>
+    </div>
+
+    <div class="row g-4">
+        <!-- Doctor Settings (Read Only for Patient) -->
+        <div class="col-md-4">
+            <div class="glass-card h-100 p-4">
+                <h4 class="mb-3"><i class="bi bi-file-medical text-danger"></i> Doctor's Directive</h4>
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-muted small">MEDICATION</label>
+                    <div class="p-2 bg-light rounded">{{ medicineName }}</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-muted small">MEAL INSTRUCTION</label>
+                    <div class="p-2 bg-danger text-white rounded">{{ instruction }}</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-muted small">FREQUENCY</label>
+                    <div class="p-2 bg-light rounded">3 Times Daily (Breakfast, Lunch, Dinner)</div>
+                </div>
+                <p class="text-muted small mt-4"><i class="bi bi-info-circle"></i> These parameters are immutable by the
+                    patient and ensure clinical safety.</p>
+            </div>
+        </div>
+
+        <!-- Patient Settings & Live Schedule -->
+        <div class="col-md-4">
+            <div class="glass-card h-100 p-4">
+                <h4 class="mb-3"><i class="bi bi-person text-success"></i> Patient Settings</h4>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <label class="form-label small">Breakfast</label>
+                        <input type="time" class="form-control form-control-sm" [(ngModel)]="patientTimes.breakfast"
+                            (change)="updateTimes()">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small">Lunch</label>
+                        <input type="time" class="form-control form-control-sm" [(ngModel)]="patientTimes.lunch"
+                            (change)="updateTimes()">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small">Dinner</label>
+                        <input type="time" class="form-control form-control-sm" [(ngModel)]="patientTimes.dinner"
+                            (change)="updateTimes()">
+                    </div>
+                </div>
+
+                <hr>
+                <h5 class="mt-3 mb-3">Live Daily Schedule</h5>
+
+                <!-- Vertical Timeline for Doses -->
+                <div class="timeline position-relative ps-3 border-start border-2 border-primary">
+                    <div *ngFor="let dose of todayDoses" class="mb-3 position-relative">
+
+                        <!-- Timeline Dot -->
+                        <div class="position-absolute start-0 translate-middle rounded-circle bg-primary"
+                            style="width: 12px; height: 12px; margin-left: -1px;"></div>
+
+                        <div class="d-flex justify-content-between align-items-center ms-3 p-2 bg-light rounded border-start border-4"
+                            [ngClass]="{
+                   'border-success': dose.action === 'TAKEN',
+                   'border-warning': dose.action === 'SNOOZED',
+                   'border-danger': dose.action === 'MISSED',
+                   'border-secondary': dose.action === 'PENDING'
+                 }">
+
+                            <div>
+                                <strong class="d-block">{{ dose.slot }}</strong>
+                                <small class="text-muted"><i class="bi bi-clock"></i> {{ dose.time }}</small>
+                                <div *ngIf="dose.actualTime" class="text-success small"><i class="bi bi-check2-all"></i>
+                                    Taken at {{ dose.actualTime }}</div>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="d-flex gap-1" *ngIf="dose.action === 'PENDING'">
+                                <button class="btn btn-sm btn-success" (click)="takeDose(dose)" title="Take Dose">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                                <button class="btn btn-sm btn-warning" (click)="snoozeDose(dose)" title="Snooze 15m">
+                                    <i class="bi bi-alarm"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger" (click)="missDose(dose)" title="Mark Missed">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
+
+                            <div *ngIf="dose.action !== 'PENDING'" class="fw-bold" [ngClass]="{
+                     'text-success': dose.action === 'TAKEN',
+                     'text-warning': dose.action === 'SNOOZED',
+                     'text-danger': dose.action === 'MISSED'
+                   }">
+                                {{ dose.action }}
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Adherence Gauge & Audit Log -->
+        <div class="col-md-4">
+            <div class="glass-card h-100 p-4 d-flex flex-column">
+                <h4 class="mb-3"><i class="bi bi-speedometer2 text-info"></i> Adherence Engine</h4>
+
+                <!-- Large Chart -->
+                <div class="d-flex justify-content-center align-items-center mb-4 mt-2">
+                    <svg width="150" height="150" class="position-relative">
+                        <circle cx="75" cy="75" r="55" style="fill:none;stroke:#edf2f7;stroke-width:12;"></circle>
+                        <circle cx="75" cy="75" r="55"
+                            style="fill:none;stroke:#00b894;stroke-width:12;stroke-dasharray:345;stroke-linecap:round;transform:rotate(-90deg);transform-origin:center;transition:all 0.5s ease-in-out;"
+                            [style.stroke-dashoffset]="getDashOffset(adherenceRate)">
+                        </circle>
+                        <text x="75" y="85" text-anchor="middle" font-size="28" font-weight="bold" fill="#2d3436">{{
+                            adherenceRate }}%</text>
+                    </svg>
+                </div>
+
+                <h5 class="mb-3"><i class="bi bi-list-columns-reverse"></i> Live Audit Trace</h5>
+                <div class="flex-grow-1 overflow-auto bg-light rounded p-2" style="max-height: 250px;">
+                    <div *ngFor="let log of auditLogs" class="border-bottom pb-2 mb-2" style="font-size: 0.85rem;">
+                        <div class="d-flex justify-content-between">
+                            <span class="fw-bold" [ngClass]="{
+                'text-success': log.status==='TAKEN',
+                'text-warning': log.status==='SNOOZED',
+                'text-danger': log.status==='MISSED',
+                'text-primary': log.status==='CREATED' || log.status==='UPDATED'
+              }">{{ log.status }}</span>
+                            <span class="text-muted">{{ log.timestamp | date:'HH:mm:ss' }}</span>
+                        </div>
+                        <div>{{ log.event }}</div>
+                        <div class="text-end small text-muted font-monospace">{{ log.version }}</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>

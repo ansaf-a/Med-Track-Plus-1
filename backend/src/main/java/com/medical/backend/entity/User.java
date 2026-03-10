@@ -36,6 +36,10 @@ public class User {
     @Column(columnDefinition = "boolean default false")
     private boolean isVerified = false;
 
+    // Analytics specific
+    @Column(columnDefinition = "double default 80.0")
+    private Double adherenceThreshold = 80.0;
+
     @com.fasterxml.jackson.annotation.JsonIgnore
     public String getPassword() {
         return this.password;

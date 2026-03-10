@@ -20,6 +20,8 @@ public class PrescriptionItem {
     private String dosageTiming;
     private String mealSlots; // e.g. "BREAKFAST,LUNCH,DINNER"
     private String foodInstruction; // "BEFORE_FOOD" | "AFTER_FOOD" | "WITH_FOOD" | "ANY"
+    private String frequency = "DAILY"; // DAILY | ALTERNATE_DAY | WEEKLY | CUSTOM
+    private String daysOfWeek; // e.g. "MON,WED,FRI" for CUSTOM
     private java.time.LocalDate startDate;
     private java.time.LocalDate endDate;
 

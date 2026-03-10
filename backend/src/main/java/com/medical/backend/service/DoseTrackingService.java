@@ -3,7 +3,9 @@ package com.medical.backend.service;
 import com.medical.backend.dto.DoseLogDTO;
 import com.medical.backend.entity.DoseLog;
 import com.medical.backend.entity.User;
+import com.medical.backend.entity.SystemAudit;
 import com.medical.backend.repository.DoseLogRepository;
+import com.medical.backend.repository.SystemAuditRepository;
 import com.medical.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,8 @@ public class DoseTrackingService {
     private DoseLogRepository doseLogRepo;
     @Autowired
     private UserRepository userRepo;
+    @Autowired
+    private SystemAuditRepository auditRepo;
 
     public List<DoseLogDTO> getTodaysDoses(String email) {
         User patient = getUser(email);
@@ -44,7 +48,19 @@ public class DoseTrackingService {
         }
         if (notes != null)
             log.setNotes(notes);
-        return toDTO(doseLogRepo.save(log));
+
+        DoseLog saved = doseLogRepo.save(log);
+
+        // Audit Log v1.1
+        SystemAudit audit = new SystemAudit();
+        audit.setAction("ADHERENCE_ACTION");
+        audit.setAdminEmail(email);
+        audit.setDetails(String.format("Patient %s marked dose %s as %s. Medicine: %s",
+                email, log.getId(), status, log.getScheduleItem().getMedicineName()));
+        audit.setVersionLabel("1.1");
+        auditRepo.save(audit);
+
+        return toDTO(saved);
     }
 
     @Transactional
@@ -59,10 +75,35 @@ public class DoseTrackingService {
                 && log.getStatus() != DoseLog.DoseStatus.SNOOZED) {
             throw new RuntimeException("Cannot snooze a dose that is " + log.getStatus());
         }
+
+        // Mark original as snoozed to preserve audit trail
         log.setSnoozedUntil(LocalDateTime.now().plusMinutes(15));
         log.setSnoozeCount(log.getSnoozeCount() + 1);
         log.setStatus(DoseLog.DoseStatus.SNOOZED);
-        return toDTO(doseLogRepo.save(log));
+        doseLogRepo.save(log);
+
+        // Create the "ghost" entry for the snoozed time
+        DoseLog ghost = new DoseLog();
+        ghost.setPatient(patient);
+        ghost.setScheduleItem(log.getScheduleItem());
+        ghost.setMealSlot(log.getMealSlot() + " (Snoozed)");
+        ghost.setFoodInstruction(log.getFoodInstruction());
+        ghost.setScheduledTime(log.getSnoozedUntil());
+        ghost.setStatus(DoseLog.DoseStatus.PENDING);
+        ghost.setAuditVersion(log.getAuditVersion());
+
+        DoseLog savedGhost = doseLogRepo.save(ghost);
+
+        // Audit Log v1.1
+        SystemAudit audit = new SystemAudit();
+        audit.setAction("ADHERENCE_SNOOZE");
+        audit.setAdminEmail(email);
+        audit.setDetails(String.format("Patient %s snoozed dose %s. New time: %s",
+                email, log.getId(), log.getSnoozedUntil()));
+        audit.setVersionLabel("1.1");
+        auditRepo.save(audit);
+
+        return toDTO(savedGhost);
     }
 
     public List<DoseLogDTO> getDoseHistory(String email) {
@@ -112,6 +153,66 @@ public class DoseTrackingService {
             case "DINNER" -> "🌙";
             default -> "💊";
         };
+    }
+
+    /**
+     * Returns dose logs grouped by date with daily adherence %.
+     * Each "block" represents one dose slot on a specific date.
+     * Weight per dose = 1/N where N = total doses for that day.
+     */
+    public List<java.util.Map<String, Object>> getAdherenceBlocks(String email) {
+        User patient = getUser(email);
+        List<DoseLog> allLogs = doseLogRepo.findByPatientOrderByScheduledTimeDesc(patient);
+
+        // Group by date
+        java.util.Map<LocalDate, List<DoseLog>> byDate = allLogs.stream()
+                .collect(Collectors.groupingBy(
+                        log -> log.getScheduledTime().toLocalDate(),
+                        java.util.TreeMap::new,
+                        Collectors.toList()));
+
+        List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
+        for (var entry : byDate.entrySet()) {
+            LocalDate date = entry.getKey();
+            List<DoseLog> dayLogs = entry.getValue();
+
+            int totalDoses = dayLogs.size();
+            long takenCount = dayLogs.stream()
+                    .filter(l -> l.getStatus() == DoseLog.DoseStatus.TAKEN).count();
+            long missedCount = dayLogs.stream()
+                    .filter(l -> l.getStatus() == DoseLog.DoseStatus.MISSED).count();
+            double weight = totalDoses > 0 ? Math.round((100.0 / totalDoses) * 100.0) / 100.0 : 0;
+            double dailyAdherence = totalDoses > 0
+                    ? Math.round((takenCount * 100.0 / totalDoses) * 10.0) / 10.0
+                    : 0;
+
+            java.util.Map<String, Object> dayBlock = new java.util.LinkedHashMap<>();
+            dayBlock.put("date", date.toString());
+            dayBlock.put("dayLabel", date.getDayOfWeek().name().substring(0, 3));
+            dayBlock.put("totalDoses", totalDoses);
+            dayBlock.put("takenCount", takenCount);
+            dayBlock.put("missedCount", missedCount);
+            dayBlock.put("pendingCount", totalDoses - takenCount - missedCount);
+            dayBlock.put("weightPerDose", weight);
+            dayBlock.put("dailyAdherence", dailyAdherence);
+
+            // Individual doses within this day
+            List<java.util.Map<String, Object>> doses = dayLogs.stream().map(log -> {
+                java.util.Map<String, Object> d = new java.util.LinkedHashMap<>();
+                d.put("doseId", log.getId());
+                d.put("medicineName", log.getScheduleItem().getMedicineName());
+                d.put("dosage", log.getScheduleItem().getDosage());
+                d.put("mealSlot", log.getMealSlot());
+                d.put("scheduledTime", log.getScheduledTime().toString());
+                d.put("status", log.getStatus().name());
+                d.put("weight", weight);
+                return d;
+            }).collect(Collectors.toList());
+            dayBlock.put("doses", doses);
+
+            result.add(dayBlock);
+        }
+        return result;
     }
 
     private User getUser(String email) {

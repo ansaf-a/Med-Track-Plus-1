@@ -5,6 +5,7 @@ import com.medical.backend.config.BeanUtil;
 import com.medical.backend.entity.Prescription;
 import com.medical.backend.entity.PrescriptionAudit;
 import com.medical.backend.repository.PrescriptionAuditRepository;
+import com.medical.backend.service.AuditPersistenceService;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.PostUpdate;
 import org.springframework.security.core.Authentication;
@@ -18,6 +19,10 @@ public class PrescriptionEntityListener {
     @PostPersist
     @PostUpdate
     public void audit(Prescription prescription) {
+        // Skip if the caller explicitly requested bypassing the listener
+        if (prescription.isSkipAuditListener()) {
+            return;
+        }
         try {
             PrescriptionAuditRepository repository = BeanUtil.getBean(PrescriptionAuditRepository.class);
             ObjectMapper objectMapper = BeanUtil.getBean(ObjectMapper.class);
@@ -27,9 +32,10 @@ public class PrescriptionEntityListener {
                     ? prescription.getStatus().name()
                     : "UNKNOWN";
 
-            // Skip non-meaningful lifecycle events (draft saves, internal reloads)
-            if (prescription.getStatus() == Prescription.PrescriptionStatus.PENDING
-                    || prescription.getStatus() == Prescription.PrescriptionStatus.APPROVED) {
+            // Skip non-meaningful lifecycle events (internal reloads or non-status updates
+            // if needed)
+            // But ensure we capture ISSUED and other critical states
+            if (prescription.getStatus() == null) {
                 return;
             }
 
@@ -50,18 +56,24 @@ public class PrescriptionEntityListener {
             String dosage = "N/A";
             String duration = "N/A";
 
-            if (prescription.getItems() != null && !prescription.getItems().isEmpty()) {
-                com.medical.backend.entity.PrescriptionItem firstItem = prescription.getItems().get(0);
-                if (firstItem.getMedicineName() != null)
-                    medicineName = firstItem.getMedicineName();
-                if (firstItem.getDosage() != null)
-                    dosage = firstItem.getDosage();
+            try {
+                if (prescription.getItems() != null && !prescription.getItems().isEmpty()) {
+                    com.medical.backend.entity.PrescriptionItem firstItem = prescription.getItems().get(0);
+                    if (firstItem.getMedicineName() != null)
+                        medicineName = firstItem.getMedicineName();
+                    if (firstItem.getDosage() != null)
+                        dosage = firstItem.getDosage();
 
-                // Compute duration from start/end date
-                if (firstItem.getStartDate() != null && firstItem.getEndDate() != null) {
-                    long days = ChronoUnit.DAYS.between(firstItem.getStartDate(), firstItem.getEndDate()) + 1;
-                    duration = days + " Day" + (days != 1 ? "s" : "");
+                    // Compute duration from start/end date
+                    if (firstItem.getStartDate() != null && firstItem.getEndDate() != null) {
+                        long days = ChronoUnit.DAYS.between(firstItem.getStartDate(), firstItem.getEndDate()) + 1;
+                        duration = days + " Day" + (days != 1 ? "s" : "");
+                    }
                 }
+            } catch (Exception lazyEx) {
+                // Items collection may not be initialized in some lifecycle contexts — skip
+                // gracefully
+                System.err.println("[WARN] Could not load prescription items for audit: " + lazyEx.getMessage());
             }
 
             // ── 5. Build JSON snapshot ────────────────────────────────────────────
@@ -85,16 +97,22 @@ public class PrescriptionEntityListener {
             snapshot.put("duration", duration);
 
             List<Map<String, Object>> itemSnapshots = new ArrayList<>();
-            if (prescription.getItems() != null) {
-                for (com.medical.backend.entity.PrescriptionItem item : prescription.getItems()) {
-                    Map<String, Object> i = new LinkedHashMap<>();
-                    i.put("name", item.getMedicineName());
-                    i.put("dosage", item.getDosage());
-                    i.put("qty", item.getQuantity());
-                    i.put("startDate", item.getStartDate() != null ? item.getStartDate().toString() : null);
-                    i.put("endDate", item.getEndDate() != null ? item.getEndDate().toString() : null);
-                    itemSnapshots.add(i);
+            try {
+                if (prescription.getItems() != null) {
+                    List<com.medical.backend.entity.PrescriptionItem> itemsCopy = new ArrayList<>(
+                            prescription.getItems());
+                    for (com.medical.backend.entity.PrescriptionItem item : itemsCopy) {
+                        Map<String, Object> i = new LinkedHashMap<>();
+                        i.put("name", item.getMedicineName());
+                        i.put("dosage", item.getDosage());
+                        i.put("qty", item.getQuantity());
+                        i.put("startDate", item.getStartDate() != null ? item.getStartDate().toString() : null);
+                        i.put("endDate", item.getEndDate() != null ? item.getEndDate().toString() : null);
+                        itemSnapshots.add(i);
+                    }
                 }
+            } catch (Exception lazyEx) {
+                System.err.println("[WARN] Could not load items for audit snapshot: " + lazyEx.getMessage());
             }
             snapshot.put("items", itemSnapshots);
 
@@ -154,7 +172,10 @@ public class PrescriptionEntityListener {
             // Keep legacy auditData field populated for backward compat
             audit.setAuditData(objectMapper.writeValueAsString(snapshot));
 
-            repository.save(audit);
+            // Use REQUIRES_NEW so audit failure never rolls back the parent prescription
+            // transaction
+            AuditPersistenceService auditPersistenceService = BeanUtil.getBean(AuditPersistenceService.class);
+            auditPersistenceService.saveAudit(audit);
 
         } catch (Exception e) {
             System.err.println("CRITICAL: Audit logging failed for prescription " +

@@ -16,6 +16,10 @@ public class BeanUtil implements ApplicationContextAware {
     }
 
     public static <T> T getBean(Class<T> beanClass) {
+        if (context == null) {
+            throw new IllegalStateException(
+                    "ApplicationContext has not been initialized in BeanUtil. Ensure it is a managed @Component.");
+        }
         return context.getBean(beanClass);
     }
 }

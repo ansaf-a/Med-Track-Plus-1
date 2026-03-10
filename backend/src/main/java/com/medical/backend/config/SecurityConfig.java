@@ -90,7 +90,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         // Allow all origins for development/debugging
         config.setAllowedOriginPatterns(List.of("*"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "*"));
         config.setAllowCredentials(true);
 

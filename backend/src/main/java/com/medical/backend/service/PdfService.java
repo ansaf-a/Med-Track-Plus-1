@@ -61,7 +61,9 @@ public class PdfService {
             if (prescription.getDoctor() != null) {
                 Paragraph doctorInfo = new Paragraph();
                 doctorInfo.add(new Chunk("Dr. " + prescription.getDoctor().getFullName() + "\n", subHeaderFont));
-                doctorInfo.add(new Chunk(prescription.getDoctor().getSpecialization() + "\n\n", normalFont));
+                String spec = prescription.getDoctor().getSpecialization();
+                doctorInfo.add(new Chunk((spec != null && !spec.isBlank() ? spec : "General Practitioner") + "\n\n",
+                        normalFont));
                 doctorInfo.setAlignment(Element.ALIGN_LEFT);
                 document.add(doctorInfo);
             }

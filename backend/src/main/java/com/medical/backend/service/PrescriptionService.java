@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -89,38 +90,61 @@ public class PrescriptionService {
 
     @Transactional
     public Prescription createPrescription(Prescription prescription) throws IOException {
-        if (!prescription.isDraft()) {
-            String fileName = pdfService.generatePrescriptionPdf(prescription);
-            prescription.setFilePath(fileName);
-            prescription.setStatus(Prescription.PrescriptionStatus.PENDING);
-        } else {
-            prescription.setStatus(Prescription.PrescriptionStatus.PENDING);
+        System.out.println("[SERVICE] createPrescription started. Status: PENDING");
+        prescription.setStatus(Prescription.PrescriptionStatus.PENDING);
+
+        // 1. Resolve the patient from email BEFORE generating the PDF
+        final String patientEmail = prescription.getPatientEmail();
+        if (patientEmail != null && !patientEmail.isEmpty()) {
+            System.out.println("[SERVICE] Resolving patient: " + patientEmail);
+            userRepository.findByEmail(patientEmail)
+                    .ifPresent(p -> {
+                        System.out.println("[SERVICE] Patient found: " + p.getId());
+                        prescription.setPatient(p);
+                    });
         }
 
-        if (prescription.getPatientEmail() != null && !prescription.getPatientEmail().isEmpty()) {
-            userRepository.findByEmail(prescription.getPatientEmail())
-                    .ifPresent(prescription::setPatient);
-        }
-
+        // 2. Link items to this prescription
         if (prescription.getItems() != null) {
-            for (PrescriptionItem item : prescription.getItems()) {
+            System.out.println("[SERVICE] Linking items: " + prescription.getItems().size());
+            // Use a copy to avoid ConcurrentModificationException during save/audit
+            List<PrescriptionItem> itemsCopy = new ArrayList<>(prescription.getItems());
+            for (PrescriptionItem item : itemsCopy) {
                 item.setPrescription(prescription);
             }
         }
 
-        // Anomaly Detection
-        if (prescription.getDoctor() != null) {
-            if (anomalyDetectionService.checkAnomaly(prescription.getDoctor().getId())) {
+        // 3. Save first so the prescription gets an ID
+        System.out.println("[SERVICE] Saving initial prescription...");
+        Prescription saved = prescriptionRepository.save(prescription);
+        System.out.println("[SERVICE] Initial save successful. ID: " + saved.getId());
+
+        // 4. Generate PDF AFTER patient and ID are set
+        if (!saved.isDraft()) {
+            System.out.println("[SERVICE] Generating PDF...");
+            String fileName = pdfService.generatePrescriptionPdf(saved);
+            saved.setFilePath(fileName);
+            System.out.println("[SERVICE] PDF generated: " + fileName);
+            saved = prescriptionRepository.save(saved);
+        }
+
+        // 5. Anomaly Detection
+        if (saved.getDoctor() != null) {
+            System.out
+                    .println("[SERVICE] Running anomaly detection for Doctor ID: " + saved.getDoctor().getId());
+            if (anomalyDetectionService.checkAnomaly(saved.getDoctor().getId())) {
+                System.out.println("[SERVICE] ANOMALY DETECTED!");
                 com.medical.backend.entity.SystemAlert alert = new com.medical.backend.entity.SystemAlert();
                 alert.setType("FRAUD_DETECTION");
                 alert.setSeverity("CRITICAL");
-                alert.setMessage("Doctor " + prescription.getDoctor().getFullName()
+                alert.setMessage("Doctor " + saved.getDoctor().getFullName()
                         + " has exceeded the 24h prescription threshold.");
                 systemAlertRepository.save(alert);
             }
         }
 
-        return prescriptionRepository.save(prescription);
+        System.out.println("[SERVICE] createPrescription completed successfully.");
+        return saved;
     }
 
     @Transactional
@@ -206,6 +230,8 @@ public class PrescriptionService {
             prescription.setDispensedAt(java.time.LocalDateTime.now());
         }
 
+        // Prevent @PostUpdate listener from firing inside this transaction
+        prescription.setSkipAuditListener(true);
         Prescription saved = prescriptionRepository.save(prescription);
 
         // Send notifications separately — failures here must NOT roll back the save
