@@ -47,6 +47,8 @@ public class PrescriptionController {
             System.out.println("[DEBUG] Creating prescription for patient: " + prescription.getPatientEmail());
 
             return ResponseEntity.ok(prescriptionService.createPrescription(prescription));
+        } catch (com.medical.backend.exception.ClinicalSafetyException e) {
+            throw e; // Let GlobalExceptionHandler handle it and return the full SafetyReportDTO
         } catch (Exception e) {
             System.err.println("[ERROR] Failed to create prescription: " + e.getMessage());
             e.printStackTrace();
@@ -80,8 +82,8 @@ public class PrescriptionController {
     public ResponseEntity<Prescription> updatePrescription(
             @PathVariable("id") Long id,
             @RequestBody Prescription prescription,
-            @RequestParam String changeReason,
-            @RequestParam String modifiedBy) throws IOException {
+            @RequestParam("changeReason") String changeReason,
+            @RequestParam("modifiedBy") String modifiedBy) throws IOException {
 
         return ResponseEntity.ok(prescriptionService.updatePrescription(id, prescription, changeReason, modifiedBy));
     }
@@ -98,6 +100,20 @@ public class PrescriptionController {
             return ResponseEntity.status(400).body(Map.of(
                     "message",
                     (e.getMessage() != null ? e.getMessage() : "Validation failed due to: " + e.getClass().getName()),
+                    "error", e.getClass().getSimpleName()));
+        }
+    }
+
+    @PostMapping("/validate-item")
+    public ResponseEntity<?> validateItem(
+            @RequestParam("drugName") String drugName,
+            @RequestParam("patientEmail") String patientEmail) {
+        try {
+            prescriptionService.validatePrescriptionItem(drugName, patientEmail);
+            return ResponseEntity.ok(Map.of("message", "Medication is safe for this patient."));
+        } catch (Exception e) {
+            return ResponseEntity.status(400).body(Map.of(
+                    "message", e.getMessage() != null ? e.getMessage() : "Safety validation failed",
                     "error", e.getClass().getSimpleName()));
         }
     }

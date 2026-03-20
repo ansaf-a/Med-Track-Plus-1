@@ -33,6 +33,9 @@ public class Prescription {
     @Transient
     private String patientEmail;
 
+    @Transient
+    private boolean overrideInteraction;
+
     /**
      * When true, the PrescriptionEntityListener will skip audit logging for this
      * save.
