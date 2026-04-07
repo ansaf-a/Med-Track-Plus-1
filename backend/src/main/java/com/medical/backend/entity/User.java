@@ -27,6 +27,8 @@ public class User {
     private String specialization;
 
     // Pharmacist specific
+    private String pharmacyName;
+    private String pharmacyLicenseNumber;
     private String shopDetails;
 
     // Patient specific
@@ -42,6 +44,21 @@ public class User {
     // Analytics specific
     @Column(columnDefinition = "double default 80.0")
     private Double adherenceThreshold = 80.0;
+
+    // Security & User 360
+    @Column(columnDefinition = "boolean default true")
+    private boolean isActive = true;
+
+    private java.time.LocalDateTime lastLogin;
+    
+    private String lastIpAddress;
+
+    private String phone;
+    
+    private String address;
+
+    @Transient
+    private Double adherenceScore;
 
     @com.fasterxml.jackson.annotation.JsonIgnore
     public String getPassword() {

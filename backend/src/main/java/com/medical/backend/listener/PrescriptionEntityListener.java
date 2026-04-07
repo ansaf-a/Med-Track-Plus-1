@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medical.backend.config.BeanUtil;
 import com.medical.backend.entity.Prescription;
 import com.medical.backend.entity.PrescriptionAudit;
-import com.medical.backend.repository.PrescriptionAuditRepository;
 import com.medical.backend.service.AuditPersistenceService;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.PostUpdate;
@@ -24,7 +23,6 @@ public class PrescriptionEntityListener {
             return;
         }
         try {
-            PrescriptionAuditRepository repository = BeanUtil.getBean(PrescriptionAuditRepository.class);
             ObjectMapper objectMapper = BeanUtil.getBean(ObjectMapper.class);
 
             // ── 1. Determine the action type ──────────────────────────────────────
@@ -40,7 +38,7 @@ public class PrescriptionEntityListener {
             }
 
             // ── 2. Compute semantic version label (v1.0, v1.1 …) ─────────────────
-            long existingCount = repository.countByPrescriptionId(prescription.getId());
+            long existingCount = BeanUtil.getBean(AuditPersistenceService.class).getAuditCount(prescription.getId());
             // existingCount is BEFORE this record is added; 0 → v1.0, 1 → v1.1, etc.
             String versionLabel = "v1." + existingCount;
 
@@ -65,8 +63,8 @@ public class PrescriptionEntityListener {
                         dosage = firstItem.getDosage();
 
                     // Compute duration from start/end date
-                    if (firstItem.getStartDate() != null && firstItem.getEndDate() != null) {
-                        long days = ChronoUnit.DAYS.between(firstItem.getStartDate(), firstItem.getEndDate()) + 1;
+                    if (firstItem.getItemStartDate() != null && firstItem.getEndDate() != null) {
+                        long days = ChronoUnit.DAYS.between(firstItem.getItemStartDate(), firstItem.getEndDate()) + 1;
                         duration = days + " Day" + (days != 1 ? "s" : "");
                     }
                 }
@@ -106,7 +104,7 @@ public class PrescriptionEntityListener {
                         i.put("name", item.getMedicineName());
                         i.put("dosage", item.getDosage());
                         i.put("qty", item.getQuantity());
-                        i.put("startDate", item.getStartDate() != null ? item.getStartDate().toString() : null);
+                        i.put("startDate", item.getItemStartDate() != null ? item.getItemStartDate().toString() : null);
                         i.put("endDate", item.getEndDate() != null ? item.getEndDate().toString() : null);
                         itemSnapshots.add(i);
                     }
@@ -118,12 +116,12 @@ public class PrescriptionEntityListener {
 
             // ── 6. Detect dosage/duration changes vs previous audit ──────────
             String changeReason = "Auto-audit: " + actionType;
-            long auditCount = repository.countByPrescriptionId(prescription.getId());
+            long auditCount = BeanUtil.getBean(AuditPersistenceService.class).getAuditCount(prescription.getId());
             if (auditCount > 0) {
                 // Load latest audit entry to diff dosage and duration
                 try {
-                    List<PrescriptionAudit> history = repository
-                            .findByPrescriptionIdOrderByModifiedAtDesc(prescription.getId());
+                    List<PrescriptionAudit> history = BeanUtil.getBean(AuditPersistenceService.class)
+                            .getAuditHistory(prescription.getId());
                     if (!history.isEmpty()) {
                         PrescriptionAudit prev = history.get(0);
                         List<String> changes = new ArrayList<>();

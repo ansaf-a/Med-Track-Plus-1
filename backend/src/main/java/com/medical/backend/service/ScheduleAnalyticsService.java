@@ -6,6 +6,7 @@ import com.medical.backend.entity.MedicationSchedule;
 import com.medical.backend.entity.User;
 import com.medical.backend.repository.DoseLogRepository;
 import com.medical.backend.repository.MedicationScheduleRepository;
+import com.medical.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +22,10 @@ public class ScheduleAnalyticsService {
     private DoseLogRepository doseLogRepo;
     @Autowired
     private MedicationScheduleRepository scheduleRepo;
+    @Autowired
+    private com.medical.backend.repository.AdherenceLogRepository adherenceLogRepository;
+    @Autowired
+    private UserRepository userRepository;
 
     public List<ScheduleAnalyticsDTO> getAdherenceRates() {
         LocalDateTime start = LocalDate.now().minusDays(30).atStartOfDay();
@@ -87,29 +92,42 @@ public class ScheduleAnalyticsService {
      * by email. Used by the patient-facing /my-adherence API.
      */
     public double getPatientAdherence(String email) {
-        com.medical.backend.entity.User patient = scheduleRepo.findAll().stream()
-                .map(com.medical.backend.entity.MedicationSchedule::getPatient)
-                .filter(u -> email.equalsIgnoreCase(u.getEmail()))
-                .findFirst().orElse(null);
+        com.medical.backend.entity.User patient = userRepository.findByEmail(email).orElse(null);
         if (patient == null)
             return 0.0;
 
         LocalDateTime start = LocalDate.now().minusDays(30).atStartOfDay();
         LocalDateTime end = LocalDateTime.now();
+
+        // 1. Scheduled Doses (New System)
         List<com.medical.backend.entity.DoseLog> logs = doseLogRepo.findByPatientAndDateRange(patient, start, end);
-        if (logs.isEmpty())
+        
+        // 2. Simple Logs (Legacy System)
+        List<com.medical.backend.entity.AdherenceLog> simpleLogs = adherenceLogRepository.findByPatientId(patient.getId());
+        List<com.medical.backend.entity.AdherenceLog> simpleLogs30Days = simpleLogs.stream()
+                .filter(l -> !l.getLogDate().isBefore(start) && !l.getLogDate().isAfter(end))
+                .collect(Collectors.toList());
+
+        if (logs.isEmpty() && simpleLogs30Days.isEmpty())
             return 0.0;
 
-        long total = logs.stream()
+        long scheduledDoseTotal = logs.stream()
                 .filter(l -> l.getScheduledTime().isBefore(LocalDateTime.now().plusMinutes(1)))
                 .count();
-        long taken = logs.stream()
+        long takenDoseCount = logs.stream()
                 .filter(l -> l.getScheduledTime().isBefore(LocalDateTime.now().plusMinutes(1)))
                 .filter(l -> l.getStatus() == com.medical.backend.entity.DoseLog.DoseStatus.TAKEN)
                 .count();
-        if (total == 0)
+
+        // For Overall Score: Merge Simple Logs
+        // Logic: Count Simple Logs as BOTH a scheduled dose and a taken dose (100% adherence per entry)
+        long totalMerged = scheduledDoseTotal + simpleLogs30Days.size();
+        long takenMerged = takenDoseCount + simpleLogs30Days.size();
+
+        if (totalMerged == 0)
             return 0.0;
-        double pct = Math.round((taken * 100.0 / total) * 10.0) / 10.0;
+
+        double pct = Math.round((takenMerged * 100.0 / totalMerged) * 10.0) / 10.0;
         return pct;
     }
 
@@ -119,10 +137,7 @@ public class ScheduleAnalyticsService {
      * Returns Map of "date" (String YYYY-MM-DD) -> "percent" (Double)
      */
     public List<Map<String, Object>> getAdherenceTrend(Long patientId, int days) {
-        User patient = scheduleRepo.findAll().stream()
-                .map(MedicationSchedule::getPatient)
-                .filter(u -> u.getId().equals(patientId))
-                .findFirst().orElse(null);
+        User patient = userRepository.findById(patientId).orElse(null);
 
         if (patient == null) {
             return new ArrayList<>();
@@ -137,7 +152,18 @@ public class ScheduleAnalyticsService {
         Map<String, List<DoseLog>> groupedLogs = allLogs.stream()
                 .collect(Collectors.groupingBy(log -> log.getScheduledTime().toLocalDate().toString()));
 
+        // 2. Fetch ALL historical simple logs (AdherenceLog)
+        List<com.medical.backend.entity.AdherenceLog> simpleLogs = adherenceLogRepository.findByPatientId(patientId);
+
+        // If no data exists at all for this patient in this range, return empty to avoid dummy data
+        if (allLogs.isEmpty() && simpleLogs.isEmpty()) {
+            return new java.util.ArrayList<>();
+        }
+
         List<Map<String, Object>> trend = new ArrayList<>();
+        Map<String, List<com.medical.backend.entity.AdherenceLog>> simpleLogsByDate = simpleLogs.stream()
+                .filter(l -> !l.getLogDate().isBefore(start) && !l.getLogDate().isAfter(end))
+                .collect(Collectors.groupingBy(log -> log.getLogDate().toLocalDate().toString()));
 
         // Loop through each day from start to end (to include days with 0 scheduled
         // doses)
@@ -145,20 +171,31 @@ public class ScheduleAnalyticsService {
             LocalDate date = LocalDate.now().minusDays(i);
             String dateString = date.toString();
             List<DoseLog> dailyLogs = groupedLogs.getOrDefault(dateString, new ArrayList<>());
+            List<com.medical.backend.entity.AdherenceLog> dailySimpleLogs = simpleLogsByDate.getOrDefault(dateString, new ArrayList<>());
 
-            long totalScheduledForDay = dailyLogs.size();
+            long totalScheduledForDay = dailyLogs.stream()
+                    .filter(l -> l.getScheduledTime().isBefore(LocalDateTime.now()))
+                    .count();
             long takenForDay = dailyLogs.stream()
+                    .filter(l -> l.getScheduledTime().isBefore(LocalDateTime.now()))
                     .filter(l -> l.getStatus() == com.medical.backend.entity.DoseLog.DoseStatus.TAKEN)
                     .count();
 
             double adherence = 0.0;
             if (totalScheduledForDay > 0) {
-                adherence = Math.round((takenForDay * 100.0 / totalScheduledForDay) * 10.0) / 10.0;
-            } else if (!trend.isEmpty()) {
-                // carry forward previous day's adherence if no meds scheduled today
-                adherence = (Double) trend.get(trend.size() - 1).get("percent");
+                // Merge simple logs if scheduled doses exist? 
+                // Or just use scheduled doses as the primary source of truth for the DAY.
+                // Let's summing them up for consistency with the overall gauge above.
+                long dayTotal = totalScheduledForDay + dailySimpleLogs.size();
+                long dayTaken = takenForDay + dailySimpleLogs.size();
+                adherence = Math.round((dayTaken * 100.0 / dayTotal) * 10.0) / 10.0;
+            } else if (!dailySimpleLogs.isEmpty()) {
+                // If only simple logs exist
+                adherence = 100.0;
             } else {
-                adherence = 100.0; // Assume 100% adherence if nothing scheduled yet
+                // No scheduled doses and no simple logs for this day = no data.
+                // Default to 0% to avoid misleading "flat 100%" lines.
+                adherence = 0.0;
             }
 
             trend.add(Map.of(

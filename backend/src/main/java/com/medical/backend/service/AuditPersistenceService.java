@@ -21,4 +21,14 @@ public class AuditPersistenceService {
     public void saveAudit(PrescriptionAudit audit) {
         prescriptionAuditRepository.save(audit);
     }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public long getAuditCount(Long prescriptionId) {
+        return prescriptionAuditRepository.countByPrescriptionId(prescriptionId);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public java.util.List<PrescriptionAudit> getAuditHistory(Long prescriptionId) {
+        return prescriptionAuditRepository.findByPrescriptionIdOrderByModifiedAtDesc(prescriptionId);
+    }
 }

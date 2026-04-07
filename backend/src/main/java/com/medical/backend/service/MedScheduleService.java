@@ -233,8 +233,8 @@ public class MedScheduleService {
         if (pi.getDaysOfWeek() != null) {
             item.setDaysOfWeek(pi.getDaysOfWeek());
         }
-        if (pi.getEndDate() != null && pi.getStartDate() != null) {
-            long days = java.time.temporal.ChronoUnit.DAYS.between(pi.getStartDate(), pi.getEndDate());
+        if (pi.getEndDate() != null && pi.getItemStartDate() != null) {
+            long days = java.time.temporal.ChronoUnit.DAYS.between(pi.getItemStartDate(), pi.getEndDate());
             item.setDurationDays((int) days);
         }
         if (override != null) {

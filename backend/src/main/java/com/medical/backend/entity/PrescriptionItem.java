@@ -30,6 +30,10 @@ public class PrescriptionItem {
     private String batchNumber;
     private String contraindicationFlags;
 
+    public java.time.LocalDate getItemStartDate() {
+        return startDate;
+    }
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "prescription_id")
     @JsonIgnore

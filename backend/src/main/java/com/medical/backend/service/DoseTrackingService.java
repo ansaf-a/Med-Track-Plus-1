@@ -7,6 +7,7 @@ import com.medical.backend.entity.SystemAudit;
 import com.medical.backend.repository.DoseLogRepository;
 import com.medical.backend.repository.SystemAuditRepository;
 import com.medical.backend.repository.UserRepository;
+import com.medical.backend.repository.AdherenceLogRepository; // Added import
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,16 +23,25 @@ public class DoseTrackingService {
     @Autowired
     private DoseLogRepository doseLogRepo;
     @Autowired
+    private DoseReminderService doseReminderService;
+    @Autowired
     private UserRepository userRepo;
     @Autowired
     private SystemAuditRepository auditRepo;
+    @Autowired
+    private AdherenceLogRepository adherenceLogRepo;
 
     public List<DoseLogDTO> getTodaysDoses(String email) {
         User patient = getUser(email);
         LocalDateTime start = LocalDate.now().atStartOfDay();
         LocalDateTime end = start.plusDays(1);
         List<DoseLog> logs = doseLogRepo.findByPatientAndDateRange(patient, start, end);
-        return logs.stream().map(this::toDTO).collect(Collectors.toList());
+        List<DoseLogDTO> dtos = logs.stream().map(this::toDTO).collect(Collectors.toList());
+        
+        // Trigger background reminder if pending doses exist
+        doseReminderService.checkAndNotifyPatient(patient, dtos);
+        
+        return dtos;
     }
 
     @Transactional
@@ -44,7 +54,24 @@ public class DoseTrackingService {
         }
         log.setStatus(DoseLog.DoseStatus.valueOf(status.toUpperCase()));
         if (status.equalsIgnoreCase("TAKEN")) {
+            if (log.getScheduledTime().isAfter(LocalDateTime.now())) {
+                throw new RuntimeException("Cannot log a future dose as TAKEN.");
+            }
             log.setActualTime(LocalDateTime.now());
+            
+            // Sync with AdherenceLog (Legacy system for overall adherence gauge)
+            if (log.getScheduleItem() != null && log.getScheduleItem().getSchedule() != null && 
+                log.getScheduleItem().getSchedule().getPrescription() != null) {
+                
+                com.medical.backend.entity.Prescription prescription = log.getScheduleItem().getSchedule().getPrescription();
+                
+                // Create life-cycle log
+                com.medical.backend.entity.AdherenceLog legacyLog = new com.medical.backend.entity.AdherenceLog();
+                legacyLog.setPatient(patient);
+                legacyLog.setPrescription(prescription);
+                legacyLog.setLogDate(LocalDateTime.now());
+                adherenceLogRepo.save(legacyLog);
+            }
         }
         if (notes != null)
             log.setNotes(notes);
@@ -164,12 +191,17 @@ public class DoseTrackingService {
         User patient = getUser(email);
         List<DoseLog> allLogs = doseLogRepo.findByPatientOrderByScheduledTimeDesc(patient);
 
-        // Group by date
+        // Group by date (TreeMap keeps dates in ascending order)
         java.util.Map<LocalDate, List<DoseLog>> byDate = allLogs.stream()
                 .collect(Collectors.groupingBy(
                         log -> log.getScheduledTime().toLocalDate(),
                         java.util.TreeMap::new,
                         Collectors.toList()));
+
+        // Within each day, sort by scheduled time ASC
+        byDate.forEach((date, dayLogs) -> {
+            dayLogs.sort(java.util.Comparator.comparing(DoseLog::getScheduledTime));
+        });
 
         List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
         for (var entry : byDate.entrySet()) {

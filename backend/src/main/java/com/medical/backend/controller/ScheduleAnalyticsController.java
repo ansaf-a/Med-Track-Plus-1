@@ -49,7 +49,7 @@ public class ScheduleAnalyticsController {
                 "label", pct >= 80 ? "Good" : pct >= 50 ? "Fair" : "Poor"));
     }
 
-    @GetMapping("/patient/{id}/trend")
+    @GetMapping("/patient-trend/{id}")
     public ResponseEntity<List<Map<String, Object>>> getPatientTrend(
             @PathVariable("id") Long patientId,
             @RequestParam(defaultValue = "14") int days) {
